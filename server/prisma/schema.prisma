@@ -230,13 +230,14 @@ model ProductVariant {
 }
 
 model OptionGroup {
-  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  variant_id    String   @db.Uuid
-  name          String   @db.VarChar(60)
-  label         String   @db.VarChar(100)
-  display_order Int      @default(0)
-  is_required   Boolean  @default(true)
-  created_at    DateTime @default(now())
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  variant_id           String   @db.Uuid
+  name                 String   @db.VarChar(60)
+  label                String   @db.VarChar(100)
+  display_order        Int      @default(0)
+  is_required          Boolean  @default(true)
+  is_pricing_dimension Boolean  @default(true)
+  created_at           DateTime @default(now())
 
   variant ProductVariant @relation(fields: [variant_id], references: [id], onDelete: Cascade)
   values  OptionValue[]
@@ -252,6 +253,7 @@ model OptionValue {
   label         String   @db.VarChar(150)
   display_order Int      @default(0)
   is_active     Boolean  @default(true)
+  image_url     String?  @db.Text
   created_at    DateTime @default(now())
 
   group OptionGroup @relation(fields: [group_id], references: [id], onDelete: Cascade)

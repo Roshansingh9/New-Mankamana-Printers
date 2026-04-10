@@ -1,6 +1,9 @@
 "use client";
 
 import React from "react";
+
+// Supabase bucket base — replace images by uploading to the bucket at the same path
+const ASSETS = "https://hvvdnlsrwpenyulgfgsz.supabase.co/storage/v1/object/public/printing-assets/product-assets";
 import { ProductDef } from "@/types";
 
 // ─── Card Holders ─────────────────────────────────────────────────────────────
@@ -43,10 +46,10 @@ export const PRODUCTS: ProductDef[] = [
         categoryId: "Card Holders",
         name: "Horizontal Laser Printed Card Holders",
         images: [
-            "/images/printing-services/card-holders/H1.png",
-            "/images/printing-services/card-holders/H2.png",
-            "/images/printing-services/card-holders/H3.png",
-            "/images/printing-services/card-holders/H4.png",
+            `${ASSETS}/card-holders/swatches/h-1.jpg`,
+            `${ASSETS}/card-holders/swatches/h-2.jpg`,
+            `${ASSETS}/card-holders/swatches/h-3.jpg`,
+            `${ASSETS}/card-holders/swatches/h-4.jpg`,
         ],
         fields: [
             { type: "number", id: "quantity", label: "Quantity", min: 5, icon: "🔢", hint: "(Min Qty. : 5)" },
@@ -92,10 +95,10 @@ export const PRODUCTS: ProductDef[] = [
         categoryId: "Card Holders",
         name: "Vertical Laser Printed Card Holders",
         images: [
-            "/images/printing-services/card-holders/V1.png",
-            "/images/printing-services/card-holders/V2.png",
-            "/images/printing-services/card-holders/V3.png",
-            "/images/printing-services/card-holders/V4.png",
+            `${ASSETS}/card-holders/swatches/v-1.jpg`,
+            `${ASSETS}/card-holders/swatches/v-2.jpg`,
+            `${ASSETS}/card-holders/swatches/v-3.jpg`,
+            `${ASSETS}/card-holders/swatches/v-4.jpg`,
         ],
         fields: [
             { type: "number", id: "quantity", label: "Quantity", min: 5, icon: "🔢", hint: "(Min Qty. : 5)" },
@@ -143,9 +146,9 @@ export const PRODUCTS: ProductDef[] = [
         categoryId: "Pamphlets",
         name: "Pamphlet - 70 GSM Maplitho Paper",
         images: [
-            "/images/printing-services/pamplates/PMP-1.jpg",
-            "/images/printing-services/pamplates/PMP-2.jpg",
-            "/images/printing-services/pamplates/PMP-3.jpg",
+            `${ASSETS}/pamphlet/pmp-1.jpg`,
+            `${ASSETS}/pamphlet/pmp-2.jpg`,
+            `${ASSETS}/pamphlet/pmp-3.jpg`,
         ],
         fields: [
             { type: "select", id: "size", label: "Size", icon: "🏷️", options: [{ value: "Letter Size (8.5\" x 11\")", label: "Letter Size (8.5\" x 11\")" }, { value: "A4 Size (8.26\" x 11.69\")", label: "A4 Size (8.26\" x 11.69\")" }] },
@@ -183,9 +186,9 @@ export const PRODUCTS: ProductDef[] = [
         categoryId: "Pamphlets",
         name: "Pamphlet - 90 GSM Art Paper",
         images: [
-            "/images/printing-services/pamplates/PMP-1.jpg",
-            "/images/printing-services/pamplates/PMP-2.jpg",
-            "/images/printing-services/pamplates/PMP-3.jpg",
+            `${ASSETS}/pamphlet/pmp-1.jpg`,
+            `${ASSETS}/pamphlet/pmp-2.jpg`,
+            `${ASSETS}/pamphlet/pmp-3.jpg`,
         ],
         fields: [
             { type: "select", id: "size", label: "Size", icon: "🏷️", options: [{ value: "Letter Size (8.5\" x 11\")", label: "Letter Size (8.5\" x 11\")" }, { value: "A4 Size (8.26\" x 11.69\")", label: "A4 Size (8.26\" x 11.69\")" }] },
@@ -221,9 +224,9 @@ export const PRODUCTS: ProductDef[] = [
         categoryId: "Pamphlets",
         name: "Pamphlet - 115 GSM Art Paper",
         images: [
-            "/images/printing-services/pamplates/PMP-1.jpg",
-            "/images/printing-services/pamplates/PMP-2.jpg",
-            "/images/printing-services/pamplates/PMP-3.jpg",
+            `${ASSETS}/pamphlet/pmp-1.jpg`,
+            `${ASSETS}/pamphlet/pmp-2.jpg`,
+            `${ASSETS}/pamphlet/pmp-3.jpg`,
         ],
         fields: [
             { type: "select", id: "size", label: "Size", icon: "🏷️", options: [{ value: "Letter Size (8.5\" x 11\")", label: "Letter Size (8.5\" x 11\")" }, { value: "A4 Size (8.26\" x 11.69\")", label: "A4 Size (8.26\" x 11.69\")" }] },
@@ -258,9 +261,9 @@ export const PRODUCTS: ProductDef[] = [
         categoryId: "Pamphlets",
         name: "Pamphlet - 170 GSM Art Paper",
         images: [
-            "/images/printing-services/pamplates/PMP-1.jpg",
-            "/images/printing-services/pamplates/PMP-2.jpg",
-            "/images/printing-services/pamplates/PMP-3.jpg",
+            `${ASSETS}/pamphlet/pmp-1.jpg`,
+            `${ASSETS}/pamphlet/pmp-2.jpg`,
+            `${ASSETS}/pamphlet/pmp-3.jpg`,
         ],
         fields: [
             { type: "select", id: "size", label: "Size", icon: "🏷️", options: [{ value: "Letter Size (8.5\" x 11\")", label: "Letter Size (8.5\" x 11\")" }, { value: "A4 Size (8.26\" x 11.69\")", label: "A4 Size (8.26\" x 11.69\")" }] },
@@ -297,8 +300,8 @@ export const PRODUCTS: ProductDef[] = [
         categoryId: "Posters",
         name: "Poster - 15x20\" (Multiple Paper Types)",
         images: [
-            "/images/printing-services/poster/POS-1.jpg",
-            "/images/printing-services/poster/POS-2.jpg"
+            `${ASSETS}/poster/pos-1.jpg`,
+            `${ASSETS}/poster/pos-2.jpg`,
         ],
         fields: [
             { type: "select", id: "paperType", label: "Paper Quality", icon: "📄", options: [{ value: "70 GSM Maplitho", label: "70 GSM Maplitho" }, { value: "90 GSM Art Paper", label: "90 GSM Art Paper" }, { value: "115 GSM Art Paper", label: "115 GSM Art Paper" }, { value: "170 GSM Art Paper", label: "170 GSM Art Paper" }] },
@@ -346,7 +349,7 @@ export const PRODUCTS: ProductDef[] = [
         id: "letterhead",
         categoryId: "Letterheads",
         name: "Letter Head - 90 GSM, Sunshine Paper (A4 Size)",
-        images: ["/images/printing-services/letterhead/LH-1.jpg"],
+        images: [`${ASSETS}/letterhead/lh-1.jpg`],
         fields: [
             { type: "select", id: "printing", label: "Printing", icon: "🖨️", options: [{ value: "Single Side", label: "Single Side" }, { value: "Double Side", label: "Double Side" }] },
             { type: "select", id: "binding", label: "Binding", icon: "📚", options: [{ value: "Pad Binding (100 leaves/pad)", label: "Pad Binding (100 leaves/pad)" }, { value: "Loose", label: "Loose" }] },
@@ -384,7 +387,7 @@ export const PRODUCTS: ProductDef[] = [
         id: "billbook",
         categoryId: "Bill Books",
         name: "A4 Bill Book - 2 Copy",
-        images: ["/images/printing-services/bill-books/BILL-1.jpg"],
+        images: [`${ASSETS}/bill-books/bill-1.jpg`],
         fields: [
             { type: "number", id: "quantity", label: "Quantity", min: 10, icon: "📦", hint: "(Min Qty. : 10)" },
             { type: "select", id: "paper1", label: "1st Paper Quality", icon: "📄", options: [{ value: "100 GSM Deo (Multicolor)", label: "100 GSM Deo (Multicolor)" }, { value: "90 GSM Sunshine (Multicolor)", label: "90 GSM Sunshine (Multicolor)" }] },
@@ -429,7 +432,7 @@ export const PRODUCTS: ProductDef[] = [
         id: "id-card",
         categoryId: "ID Cards",
         name: "Premium ID Cards",
-        images: ["/images/printing-services/id/id-1.webp"],
+        images: [`${ASSETS}/id-cards/id-1.jpg`],
         fields: [
             { type: "number", id: "quantity", label: "Quantity", min: 1, icon: "🔢" },
             { type: "select", id: "printingSide", label: "Printing Side", icon: "🖨️", options: [{ value: "Single Side", label: "Single" }, { value: "Both Side", label: "Double" }] },

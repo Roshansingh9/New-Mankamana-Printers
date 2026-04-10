@@ -64,8 +64,8 @@ const STATUS_COLORS: Record<OrderStatus, string> = {
   ORDER_CANCELLED: "bg-red-100 text-red-700 border-red-200",
 };
 
+// ORDER_PLACED auto-advances; admin manually drives everything from ORDER_PROCESSING onwards
 const NEXT_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {
-  ORDER_PLACED: "ORDER_PROCESSING",
   ORDER_PROCESSING: "ORDER_PREPARED",
   ORDER_PREPARED: "ORDER_DISPATCHED",
   ORDER_DISPATCHED: "ORDER_DELIVERED",
@@ -550,6 +550,14 @@ export default function OrderManagementPage() {
                             {/* Actions */}
                             <td className="px-5 py-4 text-right">
                               <div className="flex items-center justify-end gap-2">
+                                {/* ORDER_PLACED auto-advances — show indicator instead of advance button */}
+                                {order.status === "ORDER_PLACED" && (
+                                  <span className="flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                                    <Clock className="h-3 w-3 animate-spin" style={{ animationDuration: "3s" }} />
+                                    Auto-processing…
+                                  </span>
+                                )}
+                                {/* Manual advance button for ORDER_PROCESSING → DELIVERED */}
                                 {!isFinal && nextStatus && (
                                   <Button
                                     size="sm"

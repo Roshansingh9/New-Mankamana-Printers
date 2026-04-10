@@ -9,6 +9,7 @@ export interface DesignListItem {
   status: DesignStatusUi;
   image: string;
   fileUrl?: string;
+  fileType?: string;
   designCode?: string;
 }
 
@@ -18,7 +19,7 @@ interface SubmissionApi {
   status: "PENDING_REVIEW" | "APPROVED" | "REJECTED";
   submittedAt: string;
   fileUrl?: string | null;
-  fileType?: string | null;
+  fileType?: string | null;   // "pdf" | "png" | "jpg"
   notes?: string | null;
   designCode?: string | null;
   client?: {
@@ -47,8 +48,10 @@ const mapSubmission = (s: SubmissionApi): DesignListItem => ({
   designer: s.client?.name || "Client",
   submittedDate: formatDate(s.submittedAt),
   status: s.status === "PENDING_REVIEW" ? "Pending" : s.status === "APPROVED" ? "Approved" : "Rejected",
-  image: s.fileUrl || "",
+  // image only used for non-PDF thumbnails; PDF cards show a document icon instead
+  image: s.fileType === "pdf" ? "" : (s.fileUrl || ""),
   fileUrl: s.fileUrl || undefined,
+  fileType: s.fileType || undefined,
   designCode: s.designCode ?? undefined,
 });
 

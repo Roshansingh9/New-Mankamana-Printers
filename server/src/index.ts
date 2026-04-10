@@ -12,6 +12,7 @@ import templateRoutes from "./routes/design/template.routes";
 import designSubmissionRoutes from "./routes/design/design-submission.routes";
 import designRoutes from "./routes/design/design.routes";
 import productOrderRoutes from "./routes/orders/product-order.routes";
+import { sweepStalePlacedOrders } from "./services/orders/product-order.service";
 import clientWalletRoutes from "./routes/wallet/client-wallet.routes";
 import adminWalletRoutes from "./routes/wallet/admin-wallet.routes";
 import { globalErrorHandler } from "./middleware/error.middleware";
@@ -75,6 +76,10 @@ app.use(globalErrorHandler);
 
 app.listen(port, () => {
   console.log(`Server running at http://localhost:${port}`);
+  // Advance any ORDER_PLACED orders that were stuck before server restart
+  sweepStalePlacedOrders().catch((err) =>
+    console.error("[AutoTransition] Startup sweep failed:", err)
+  );
 });
 
 export default app;

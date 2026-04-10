@@ -1,5 +1,6 @@
 import prisma from "../../connect";
 import { getVariantPricingCombination, calculateOrderAmount, normalizeSelectedOptions } from "../catalog/product-pricing.service";
+import { sendOrderPlaced, sendOrderStatusUpdate } from "../../utils/email";
 
 // ORDER_PLACED → ORDER_PROCESSING → ORDER_PREPARED → ORDER_DISPATCHED → ORDER_DELIVERED
 const ORDER_STATUS_FLOW: Record<string, string | null> = {
@@ -9,6 +10,58 @@ const ORDER_STATUS_FLOW: Record<string, string | null> = {
   ORDER_DISPATCHED: "ORDER_DELIVERED",
   ORDER_DELIVERED: null,
 };
+
+// How long after placement before the order is automatically moved to ORDER_PROCESSING (2 minutes)
+const AUTO_PROCESSING_DELAY_MS = 2 * 60 * 1000;
+
+// autoAdvanceToProcessing: Called by setTimeout or startup sweep to move an ORDER_PLACED order forward
+async function autoAdvanceToProcessing(orderId: string): Promise<void> {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        status: true,
+        expected_delivery_date: true,
+        variant: { select: { variant_name: true, product: { select: { name: true } } } },
+        client: { select: { email: true, business_name: true } },
+      },
+    });
+    // Guard: only advance if still in ORDER_PLACED (admin may have cancelled it in the meantime)
+    if (!order || order.status !== "ORDER_PLACED") return;
+    await prisma.order.update({
+      where: { id: orderId },
+      data: { status: "ORDER_PROCESSING", updated_at: new Date() },
+    });
+    // Fire email notification (non-blocking)
+    sendOrderStatusUpdate({
+      to: order.client.email,
+      businessName: order.client.business_name,
+      orderId,
+      productName: order.variant.product.name,
+      variantName: order.variant.variant_name,
+      newStatus: "ORDER_PROCESSING",
+      expectedDeliveryDate: order.expected_delivery_date,
+    }).catch((err) => console.error(`[Email] Order processing notification failed for ${orderId}:`, err));
+  } catch (err) {
+    console.error(`[AutoTransition] Failed to advance order ${orderId} to ORDER_PROCESSING:`, err);
+  }
+}
+
+// sweepStalePlacedOrders: On server startup, advance any ORDER_PLACED orders older than the delay
+// (handles the case where the server restarted before the scheduled setTimeout fired)
+export async function sweepStalePlacedOrders(): Promise<void> {
+  const threshold = new Date(Date.now() - AUTO_PROCESSING_DELAY_MS);
+  const staleOrders = await prisma.order.findMany({
+    where: { status: "ORDER_PLACED", created_at: { lt: threshold } },
+    select: { id: true },
+  });
+  for (const { id } of staleOrders) {
+    await autoAdvanceToProcessing(id);
+  }
+  if (staleOrders.length > 0) {
+    console.log(`[AutoTransition] Advanced ${staleOrders.length} stale order(s) → ORDER_PROCESSING on startup`);
+  }
+}
 
 // createProductOrderService: Core logic for placing a new order, resolving pricing and saving configurations
 export const createProductOrderService = async (data: {
@@ -70,7 +123,7 @@ export const createProductOrderService = async (data: {
     designCode: designCode || null,
   };
 
-  return await prisma.$transaction(async (tx) => {
+  const newOrder = await prisma.$transaction(async (tx) => {
     let approvedDesignId: string | null = null;
 
     if (designCode) {
@@ -126,6 +179,33 @@ export const createProductOrderService = async (data: {
 
     return order;
   });
+
+  // Schedule automatic transition ORDER_PLACED → ORDER_PROCESSING after the delay
+  setTimeout(() => autoAdvanceToProcessing(newOrder.id), AUTO_PROCESSING_DELAY_MS);
+
+  // Send order confirmation email (non-blocking)
+  prisma.order.findUnique({
+    where: { id: newOrder.id },
+    select: {
+      quantity: true,
+      final_amount: true,
+      variant: { select: { variant_name: true, product: { select: { name: true } } } },
+      client: { select: { email: true, business_name: true } },
+    },
+  }).then((o) => {
+    if (!o) return;
+    return sendOrderPlaced({
+      to: o.client.email,
+      businessName: o.client.business_name,
+      orderId: newOrder.id,
+      productName: o.variant.product.name,
+      variantName: o.variant.variant_name,
+      quantity: o.quantity,
+      finalAmount: Number(o.final_amount),
+    });
+  }).catch((err) => console.error(`[Email] Order placed notification failed for ${newOrder.id}:`, err));
+
+  return newOrder;
 };
 
 // getOrderDetailsService: Retrieves full details of a specific order including variant and config info
@@ -209,10 +289,23 @@ export const updateOrderStatusService = async (orderId: string, status: string, 
   }
 
   if (status === "ORDER_CANCELLED") {
-    return await prisma.order.update({
+    const updated = await prisma.order.update({
       where: { id: orderId },
       data: { status: "ORDER_CANCELLED" as any, updated_at: new Date() },
+      include: {
+        client: { select: { email: true, business_name: true } },
+        variant: { select: { variant_name: true, product: { select: { name: true } } } },
+      },
     });
+    sendOrderStatusUpdate({
+      to: updated.client.email,
+      businessName: updated.client.business_name,
+      orderId,
+      productName: updated.variant.product.name,
+      variantName: updated.variant.variant_name,
+      newStatus: "ORDER_CANCELLED",
+    }).catch((err) => console.error(`[Email] Order cancel notification failed for ${orderId}:`, err));
+    return updated;
   }
 
   const allowedNextStatus = ORDER_STATUS_FLOW[order.status];
@@ -227,10 +320,24 @@ export const updateOrderStatusService = async (orderId: string, status: string, 
     updateData.expected_delivery_date = new Date(expectedDeliveryDate);
   }
 
-  return await prisma.order.update({
+  const updated = await prisma.order.update({
     where: { id: orderId },
     data: updateData,
+    include: {
+      client: { select: { email: true, business_name: true } },
+      variant: { select: { variant_name: true, product: { select: { name: true } } } },
+    },
   });
+  sendOrderStatusUpdate({
+    to: updated.client.email,
+    businessName: updated.client.business_name,
+    orderId,
+    productName: updated.variant.product.name,
+    variantName: updated.variant.variant_name,
+    newStatus: status,
+    expectedDeliveryDate: updated.expected_delivery_date,
+  }).catch((err) => console.error(`[Email] Order status notification failed for ${orderId}:`, err));
+  return updated;
 };
 
 // setOrderDeliveryDateService: Admin sets or updates the expected delivery date without changing status

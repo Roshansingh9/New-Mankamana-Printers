@@ -28,6 +28,9 @@ import {
   CheckCircle,
   XCircle,
   Hourglass,
+  Download,
+  FileText,
+  ExternalLink,
 } from "lucide-react";
 import {
   approveDesignSubmission,
@@ -163,6 +166,28 @@ export default function DesignApprovalPage() {
     rejected: designs.filter((d) => d.status === "Rejected").length,
   };
 
+  // Download file via fetch → blob so the browser saves it (works cross-origin for public Supabase URLs)
+  const handleDownload = async (url: string, title: string, fileType?: string) => {
+    const ext = fileType === "pdf" ? "pdf" : fileType === "png" ? "png" : "jpg";
+    const filename = `${title.replace(/[^a-z0-9]/gi, "-").toLowerCase()}.${ext}`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("fetch failed");
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      // Fallback: open in new tab
+      window.open(url, "_blank");
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Page header */}
@@ -237,9 +262,15 @@ export default function DesignApprovalPage() {
                 key={design.id}
                 className="group overflow-hidden transition-all hover:shadow-md"
               >
-                {/* Image */}
+                {/* Thumbnail */}
                 <div className="relative aspect-video overflow-hidden bg-slate-100 dark:bg-slate-800">
-                  {design.image ? (
+                  {design.fileType === "pdf" ? (
+                    /* PDF — can't thumbnail; show a document icon card instead */
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-red-50 dark:bg-red-950/20">
+                      <FileText className="h-10 w-10 text-red-400" />
+                      <span className="text-xs font-semibold text-red-500 uppercase tracking-wide">PDF Document</span>
+                    </div>
+                  ) : design.image ? (
                     <img
                       src={design.image}
                       alt={design.title}
@@ -319,6 +350,18 @@ export default function DesignApprovalPage() {
                     <Eye className="h-3.5 w-3.5" />
                     Review
                   </Button>
+                  {design.fileUrl && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      title="Download file"
+                      onClick={() => handleDownload(design.fileUrl!, design.title, design.fileType)}
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                   {isPending && (
                     <>
                       <Button
@@ -370,21 +413,58 @@ export default function DesignApprovalPage() {
               )}
             </DialogDescription>
           </DialogHeader>
-          <div className="aspect-video w-full overflow-hidden rounded-lg bg-slate-100 shadow-inner dark:bg-slate-800">
-            {selectedDesign?.image ? (
+          {/* Preview area — image or PDF */}
+          <div className="min-h-80 max-h-[520px] w-full overflow-hidden rounded-lg bg-slate-100 shadow-inner dark:bg-slate-800">
+            {selectedDesign?.fileType === "pdf" && selectedDesign.fileUrl ? (
+              <iframe
+                src={selectedDesign.fileUrl}
+                title={selectedDesign.title}
+                className="h-[480px] w-full border-0"
+              />
+            ) : selectedDesign?.fileUrl ? (
               <img
-                src={selectedDesign.image}
+                src={selectedDesign.fileUrl}
                 alt={selectedDesign.title}
-                className="h-full w-full object-contain"
+                className="max-h-[480px] w-full object-contain"
                 referrerPolicy="no-referrer"
               />
             ) : (
-              <div className="flex h-full w-full items-center justify-center text-sm text-slate-400">
+              <div className="flex min-h-80 w-full items-center justify-center text-sm text-slate-400">
                 No preview available
               </div>
             )}
           </div>
-          <DialogFooter className="gap-2 sm:justify-end">
+
+          <DialogFooter className="gap-2 sm:justify-between">
+            {/* Left: file actions */}
+            <div className="flex gap-2">
+              {selectedDesign?.fileUrl && (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => window.open(selectedDesign.fileUrl, "_blank")}
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Open in Tab
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => handleDownload(selectedDesign.fileUrl!, selectedDesign.title, selectedDesign.fileType)}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Download
+                  </Button>
+                </>
+              )}
+            </div>
+            {/* Right: review actions */}
+            <div className="flex gap-2">
             <Button type="button" variant="outline" onClick={() => setIsViewOpen(false)}>
               Close
             </Button>
@@ -410,6 +490,7 @@ export default function DesignApprovalPage() {
                 </Button>
               </>
             )}
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

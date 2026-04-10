@@ -1,44 +1,47 @@
 import { Service, Template, Order } from "@/types";
 
-export const SERVICES: Service[] = [
+// Supabase public storage base — swap images by uploading to the bucket without touching code
+const BUCKET = "https://hvvdnlsrwpenyulgfgsz.supabase.co/storage/v1/object/public/printing-assets";
+const ASSETS = `${BUCKET}/product-assets`;
+const TMPL  = `${BUCKET}/templates`;
 
+export const SERVICES: Service[] = [
     {
         id: "card-holders",
         name: "Card Holders",
         minimumQuantity: 100,
-        image: "/images/printing-services/card-holder.jpg",
+        image: `${ASSETS}/card-holders/thumb.jpg`,
     },
     {
         id: "pamphlets",
         name: "Pamphlets",
         minimumQuantity: 200,
-        image: "/images/printing-services/pamplets.jpg",
+        image: `${ASSETS}/pamphlet/thumb.jpg`,
     },
     {
         id: "posters",
         name: "Posters",
         minimumQuantity: 200,
-        image: "/images/printing-services/poster.jpg",
+        image: `${ASSETS}/poster/thumb.jpg`,
     },
     {
         id: "letterheads",
         name: "Letterheads",
         minimumQuantity: 100,
-        image: "/images/printing-services/letter-head.jpg",
+        image: `${ASSETS}/letterhead/thumb.jpg`,
     },
     {
         id: "bill-books",
         name: "Bill Books",
         minimumQuantity: 100,
-        image: "/images/printing-services/bill-books.jpg",
+        image: `${ASSETS}/bill-books/thumb.jpg`,
     },
     {
         id: "id-cards",
         name: "ID Cards",
         minimumQuantity: 1,
-        image: "/images/printing-services/id/id-1.webp",
+        image: `${ASSETS}/id-cards/thumb.jpg`,
     },
-
 ];
 
 export const TEMPLATE_CATEGORIES = [
@@ -54,49 +57,49 @@ export const TEMPLATES: Template[] = [
         id: "t1",
         name: "Modern Business Card 01",
         category: "Visiting Cards",
-        image: "/images/Modern Business Card 01.avif",
+        image: `${TMPL}/modern-business-card-01.jpg`,
     },
     {
         id: "t2",
         name: "Modern Business Card 02",
         category: "Visiting Cards",
-        image: "/images/Modern Business Card 02.avif",
+        image: `${TMPL}/modern-business-card-02.jpg`,
     },
     {
         id: "t3",
         name: "Classic Business Card",
         category: "Visiting Cards",
-        image: "/images/Classic Business Card.avif",
+        image: `${TMPL}/classic-business-card.jpg`,
     },
     {
         id: "t4",
         name: "Corporate Letterhead 01",
         category: "Letterheads",
-        image: "/images/Corporate Letterhead 01.avif",
+        image: `${TMPL}/corporate-letterhead-01.jpg`,
     },
     {
         id: "t5",
         name: "Standard Envelope",
         category: "Envelopes",
-        image: "/images/Standard Envelope.avif",
+        image: `${TMPL}/standard-envelope.jpg`,
     },
     {
         id: "t6",
         name: "Business Envelope",
         category: "Envelopes",
-        image: "/images/Business Envelope.avif",
+        image: `${TMPL}/business-envelope.jpg`,
     },
     {
         id: "t7",
         name: "Employee ID Card",
         category: "ID Cards",
-        image: "/images/Employee ID Card.avif",
+        image: `${TMPL}/employee-id-card.jpg`,
     },
     {
         id: "t8",
         name: "Event ID Card",
         category: "ID Cards",
-        image: "/images/Event ID Card.avif",
+        image: `${TMPL}/event-id-card.jpg`,
     }
 ];
 

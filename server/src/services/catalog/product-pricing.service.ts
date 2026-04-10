@@ -21,16 +21,29 @@ export const buildCombinationKey = (selectedOptions: Record<string, string>) => 
   const entries = Object.entries(selectedOptions).sort(([left], [right]) => left.localeCompare(right));
   return entries.length === 0
     ? "__NO_OPTIONS__"
-    : JSON.stringify(Object.fromEntries(entries));
+    : entries.map(([k, v]) => `${k}:${v}`).join("|");
 };
 
-// getVariantPricingCombination: Queries the database for a price record matching the specific chosen options
+// getVariantPricingCombination: Queries the database for a price record matching the specific chosen options.
+// Only pricing-dimension groups are included in the combination key — display-only groups are ignored.
 export const getVariantPricingCombination = async (
   variantId: string,
   options: PricingOptionsInput
 ) => {
   const selectedOptions = normalizeSelectedOptions(options);
-  const combinationKey = buildCombinationKey(selectedOptions);
+
+  // Fetch which groups are pricing dimensions so non-dimension selections don't break the key lookup
+  const pricingGroups = await prisma.optionGroup.findMany({
+    where: { variant_id: variantId, is_pricing_dimension: true },
+    select: { name: true },
+  });
+  const pricingDimNames = new Set(pricingGroups.map((g) => g.name));
+
+  const pricingOptions = Object.fromEntries(
+    Object.entries(selectedOptions).filter(([k]) => pricingDimNames.has(k))
+  );
+
+  const combinationKey = buildCombinationKey(pricingOptions);
 
   return await prisma.variantPricing.findFirst({
     where: {

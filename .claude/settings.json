@@ -23,5 +23,12 @@
         "timeout": 10000
       }
     ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(curl -s http://localhost:8005/)",
+      "Bash(npx ts-node:*)",
+      "Bash(tasklist)"
+    ]
   }
 }
