@@ -291,6 +291,49 @@ export const sendOrderStatusUpdate = async (opts: {
   });
 };
 
+// sendClientDeactivated: Notifies a client that their account has been deactivated by the admin
+export const sendClientDeactivated = async (opts: {
+  to: string;
+  ownerName: string;
+  businessName: string;
+  reason?: string;
+}) => {
+  const { to, ownerName, businessName, reason } = opts;
+
+  await transporter.sendMail({
+    from: FROM,
+    to,
+    subject: "Your New Mankamana Printers Account Has Been Deactivated",
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b;">
+        <div style="background: #0061FF; padding: 32px 40px;">
+          <h1 style="color: #ffffff; margin: 0; font-size: 22px; font-weight: 700;">New Mankamana Printers</h1>
+        </div>
+        <div style="padding: 40px; border: 1px solid #e2e8f0; border-top: none;">
+          <h2 style="font-size: 20px; margin: 0 0 8px;">Account Deactivated</h2>
+          <p style="color: #64748b; margin: 0 0 8px;">Hi ${ownerName},</p>
+          <p style="color: #64748b; margin: 0 0 28px;">
+            Your <strong>${businessName}</strong> account has been deactivated. You will no longer be able to log in or place orders until your account is reactivated.
+          </p>
+          ${reason ? `
+          <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 20px; margin-bottom: 28px;">
+            <p style="margin: 0 0 6px; font-size: 12px; color: #ef4444; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">Reason</p>
+            <p style="margin: 0; color: #1e293b;">${reason}</p>
+          </div>
+          ` : ""}
+          <p style="color: #94a3b8; font-size: 13px; margin: 0;">
+            If you believe this is a mistake, please contact us at
+            <a href="mailto:${process.env.SMTP_EMAIL}" style="color: #0061FF;">${process.env.SMTP_EMAIL}</a>.
+          </p>
+        </div>
+        <div style="padding: 20px 40px; background: #f8fafc; border: 1px solid #e2e8f0; border-top: none; text-align: center;">
+          <p style="margin: 0; color: #94a3b8; font-size: 12px;">New Mankamana Printers &mdash; Professional Printing Services</p>
+        </div>
+      </div>
+    `,
+  });
+};
+
 // sendDesignRejected: Notifies client their design was rejected and provides admin feedback
 export const sendDesignRejected = async (opts: {
   to: string;

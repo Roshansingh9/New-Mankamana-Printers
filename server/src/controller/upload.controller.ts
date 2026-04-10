@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { uploadFileToSupabase } from "../utils/file-upload";
+import { uploadToSupabasePath, getSupabasePublicUrl } from "../utils/file-upload";
 
 // Folders that callers are permitted to upload into via the generic /uploads endpoint
 const ALLOWED_FOLDERS = new Set([
@@ -15,6 +15,7 @@ const ALLOWED_FOLDERS = new Set([
 ]);
 
 // uploadFile: Generic handler to upload a single file to Supabase storage, with optional folder specification
+// Returns both the file path (for DB storage) and the full public URL (for immediate display)
 export const uploadFile = async (req: Request, res: Response) => {
   try {
     if (!req.file) {
@@ -24,12 +25,13 @@ export const uploadFile = async (req: Request, res: Response) => {
     const requestedFolder = String(req.body.folder || "general");
     const folder = ALLOWED_FOLDERS.has(requestedFolder) ? requestedFolder : "general";
 
-    const fileUrl = await uploadFileToSupabase(req.file, folder);
+    const filePath = await uploadToSupabasePath(req.file, folder);
+    const fileUrl = getSupabasePublicUrl(filePath);
 
     res.status(200).json({
       success: true,
       message: "File uploaded successfully",
-      data: { fileUrl },
+      data: { filePath, fileUrl },
     });
   } catch (error: any) {
     console.error("Upload Error:", error.message);

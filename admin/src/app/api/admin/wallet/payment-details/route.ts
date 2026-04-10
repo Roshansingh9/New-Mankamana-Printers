@@ -31,14 +31,25 @@ async function toJsonResponse(apiResponse: Response) {
 export async function POST(request: Request) {
   const token = await getAuthToken();
   if (!token) {
-    return NextResponse.json(
-      { message: "Not authenticated." },
-      { status: 401 }
-    );
+    return NextResponse.json({ message: "Not authenticated." }, { status: 401 });
   }
 
-  const body = await request.json().catch(() => ({}));
+  const contentType = request.headers.get("content-type") || "";
 
+  if (contentType.includes("multipart/form-data")) {
+    // Forward FormData (with QR file) directly to backend
+    const formData = await request.formData();
+    const apiResponse = await fetch(`${API_BASE_URL}/admin/wallet/payment-details`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+      cache: "no-store",
+    });
+    return toJsonResponse(apiResponse);
+  }
+
+  // JSON body (no file)
+  const body = await request.json().catch(() => ({}));
   const apiResponse = await fetch(`${API_BASE_URL}/admin/wallet/payment-details`, {
     method: "POST",
     headers: {

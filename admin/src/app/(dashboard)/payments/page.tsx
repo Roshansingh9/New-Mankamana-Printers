@@ -110,9 +110,9 @@ export default function PaymentsPage() {
     accountNumber: "",
     branch: "",
     paymentId: "",
-    qrImageUrl: "",
     note: "",
   });
+  const [qrFile, setQrFile] = useState<File | null>(null);
 
   const [clientLookupId, setClientLookupId] = useState("");
   const [clientSummary, setClientSummary] =
@@ -276,7 +276,7 @@ export default function PaymentsPage() {
         accountNumber: paymentForm.accountNumber,
         branch: paymentForm.branch || undefined,
         paymentId: paymentForm.paymentId || undefined,
-        qrImageUrl: paymentForm.qrImageUrl || undefined,
+        qrFile: qrFile || undefined,
         note: paymentForm.note || undefined,
         isActive: true,
       });
@@ -504,17 +504,20 @@ export default function PaymentsPage() {
             />
           </div>
           <div className="space-y-2 md:col-span-2">
-            <Label>QR Image URL</Label>
-            <Input
-              value={paymentForm.qrImageUrl}
-              onChange={(event) =>
-                setPaymentForm((prev) => ({
-                  ...prev,
-                  qrImageUrl: event.target.value,
-                }))
-              }
-              placeholder="https://..."
-            />
+            <Label>QR Image</Label>
+            <label
+              htmlFor="qr-file-input"
+              className={`flex items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer transition-colors text-sm ${qrFile ? "border-emerald-400 bg-emerald-50 text-emerald-700" : "border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-500"}`}
+            >
+              <input
+                id="qr-file-input"
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/webp"
+                className="hidden"
+                onChange={(e) => setQrFile(e.target.files?.[0] || null)}
+              />
+              {qrFile ? `✓ ${qrFile.name} (click to change)` : "Click to upload QR image (PNG, JPG)"}
+            </label>
           </div>
           <div className="space-y-2 md:col-span-2">
             <Label>Notes</Label>

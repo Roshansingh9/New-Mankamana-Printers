@@ -132,19 +132,6 @@ model Client {
   @@map("clients")
 }
 
-// PRINTING SERVICES
-
-model PrintingService {
-  id          String  @id @default(uuid())
-  name        String
-  description String?
-  basePrice   Float
-  isActive    Boolean @default(true)
-  createdAt DateTime @default(now())
-
-  @@map("printing_services")
-}
-
 // TEMPLATE LIBRARY
 
 model TemplateCategory {

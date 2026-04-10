@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { BadgeDollarSign, SlidersHorizontal } from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   createAdminPricingRow,
@@ -309,57 +309,6 @@ export default function PricingPage() {
           </CardContent>
         </Card>
       </div>
-
-      <Card className="border-slate-200/80 shadow-sm dark:border-slate-800">
-        <CardHeader>
-          <CardTitle className="text-base font-semibold">Add Pricing Line</CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div className="space-y-2 md:col-span-3">
-            <Label>Configuration</Label>
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-900">
-              Select pricing field values above. They will be used to create the combination row.
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>Unit Price</Label>
-            <Input
-              type="number"
-              placeholder="25"
-              value={unitPrice}
-              onChange={(event) => setUnitPrice(event.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>Discount Type</Label>
-            <select
-              className="flex h-9 w-full rounded-md border border-slate-200 bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950 dark:border-slate-800 dark:focus-visible:ring-slate-300"
-              value={discountType || ""}
-              onChange={(event) => setDiscountType(event.target.value as DiscountType)}
-            >
-              <option value="">None</option>
-              <option value="percentage">Percentage</option>
-              <option value="fixed">Fixed</option>
-            </select>
-          </div>
-          <div className="space-y-2">
-            <Label>Discount Value</Label>
-            <Input
-              type="number"
-              placeholder="10"
-              value={discountValue}
-              onChange={(event) => setDiscountValue(event.target.value)}
-              disabled={!discountType}
-            />
-          </div>
-          <div className="md:col-span-3 flex justify-end">
-            <Button className="gap-2" onClick={handleCreatePricing} disabled={isSubmitting || !unitPrice}>
-              <BadgeDollarSign className="h-4 w-4" />
-              {isSubmitting ? "Saving..." : "Save Pricing Row"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
 
       <Dialog open={!!editingRow} onOpenChange={() => setEditingRow(null)}>
         <DialogContent className="max-w-lg">

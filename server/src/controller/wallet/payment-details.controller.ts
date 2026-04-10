@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { createPaymentDetailsService, getActivePaymentDetailsService } from "../../services/wallet/payment-details.service";
 import { createPaymentDetailsSchema } from "../../validators/wallet.validator";
-import { uploadToSupabase } from "../../utils/file-upload";
+import { uploadToSupabasePath, deleteFromSupabase, getSupabasePublicUrl } from "../../utils/file-upload";
 
 // getPaymentDetails: Returns the currently active bank and QR payment information for clients to perform top-ups
 export const getPaymentDetails = async (req: Request, res: Response) => {
@@ -10,6 +10,13 @@ export const getPaymentDetails = async (req: Request, res: Response) => {
     if (!details) {
       return res.status(404).json({ success: false, message: "No active payment details found" });
     }
+
+    // Generate QR URL dynamically from stored path (or return as-is if already a full URL for backward-compat)
+    let qrImageUrl: string | null = details.qrImageUrl ?? null;
+    if (qrImageUrl && !qrImageUrl.startsWith("http")) {
+      qrImageUrl = getSupabasePublicUrl(qrImageUrl);
+    }
+
     res.status(200).json({
       success: true,
       data: {
@@ -19,7 +26,7 @@ export const getPaymentDetails = async (req: Request, res: Response) => {
         accountNumber: details.accountNumber,
         branch: details.branch,
         paymentId: details.paymentId,
-        qrImageUrl: details.qrImageUrl,
+        qrImageUrl,
         note: details.note,
       },
     });
@@ -34,10 +41,15 @@ export const createPaymentDetails = async (req: Request, res: Response) => {
   try {
     const body = { ...req.body };
 
-    // If a QR image file was uploaded, store it in Supabase and use its URL
+    // If a QR image file was uploaded, store path (not full URL) so the URL can be generated dynamically
     if (req.file) {
       try {
-        body.qrImageUrl = await uploadToSupabase(req.file, "qr-codes");
+        // Delete old QR if it exists (get current active payment details first)
+        const existing = await getActivePaymentDetailsService();
+        if (existing?.qrImageUrl && !existing.qrImageUrl.startsWith("http")) {
+          await deleteFromSupabase(existing.qrImageUrl).catch(() => {});
+        }
+        body.qrImageUrl = await uploadToSupabasePath(req.file, "qr-codes");
       } catch (uploadError: any) {
         return res.status(500).json({ success: false, message: "QR image upload failed", error: uploadError.message });
       }

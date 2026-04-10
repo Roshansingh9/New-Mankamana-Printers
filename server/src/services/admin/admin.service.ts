@@ -3,7 +3,7 @@ import { AppError } from "../../utils/apperror";
 import bcrypt from "bcrypt";
 import { v4 as uuidv4 } from "uuid";
 import { randomBytes } from "crypto";
-import { sendClientCredentials, sendPasswordReset } from "../../utils/email";
+import { sendClientCredentials, sendPasswordReset, sendClientDeactivated } from "../../utils/email";
 
 // getRegistrationRequestsService: Logic to fetch registration requests with optional status and search filtering
 export const getRegistrationRequestsService = async (filters: { status?: string; search?: string } = {}) => {
@@ -271,4 +271,61 @@ export const resetClientPasswordService = async (clientId: string) => {
       // new_password intentionally NOT returned — sent to client via email only
     },
   };
+};
+
+// toggleClientStatusService: Activates or deactivates a client account; sends email on deactivation
+export const toggleClientStatusService = async (clientId: string, reason?: string) => {
+  const client = await prisma.client.findUnique({ where: { id: clientId } });
+  if (!client) throw new AppError("Client not found", 404);
+
+  const newStatus = client.status === "active" ? "inactive" : "active";
+
+  await prisma.client.update({
+    where: { id: clientId },
+    data: { status: newStatus },
+  });
+
+  if (newStatus === "inactive") {
+    sendClientDeactivated({
+      to: client.email,
+      ownerName: client.owner_name,
+      businessName: client.business_name,
+      reason,
+    }).catch((err) => console.error("[Email] Failed to send deactivation email:", err));
+  }
+
+  return {
+    message: `Client account ${newStatus === "active" ? "activated" : "deactivated"} successfully.`,
+    status: newStatus,
+  };
+};
+
+// getClientOrdersAdminService: Returns all orders placed by a specific client for admin view
+export const getClientOrdersAdminService = async (clientId: string) => {
+  return await prisma.order.findMany({
+    where: { user_id: clientId },
+    include: {
+      variant: { select: { variant_name: true, product: { select: { name: true } } } },
+      approvedDesign: { select: { designCode: true } },
+    },
+    orderBy: { created_at: "desc" },
+  });
+};
+
+// getClientDesignsAdminService: Returns all design submissions by a specific client for admin view
+export const getClientDesignsAdminService = async (clientId: string) => {
+  return await prisma.designSubmission.findMany({
+    where: { clientId },
+    select: {
+      id: true,
+      title: true,
+      status: true,
+      submittedAt: true,
+      fileUrl: true,
+      fileType: true,
+      feedbackMessage: true,
+      approvedDesign: { select: { designCode: true } },
+    },
+    orderBy: { submittedAt: "desc" },
+  });
 };

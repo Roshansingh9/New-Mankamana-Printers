@@ -6,6 +6,15 @@ import { uploadToSupabase } from "../../utils/file-upload";
 // createProductOrder: Handles the placement of a new order by a client, with optional payment proof upload
 export const createProductOrder = async (req: Request, res: Response) => {
   try {
+    // When sent as multipart FormData, options.configDetails arrives as a JSON string — parse it back to array
+    if (req.body.options && typeof req.body.options.configDetails === "string") {
+      try {
+        req.body.options.configDetails = JSON.parse(req.body.options.configDetails);
+      } catch {
+        req.body.options.configDetails = [];
+      }
+    }
+
     const validated = createProductOrderSchema.safeParse(req.body);
     if (!validated.success) {
       return res.status(400).json({ success: false, message: "Validation failed", errors: validated.error.issues });
@@ -16,7 +25,10 @@ export const createProductOrder = async (req: Request, res: Response) => {
     let paymentProofMimeType: string | undefined;
     let paymentProofFileSize: number | undefined;
 
+    // Accept pre-uploaded proof path OR raw file (two separate flows)
+    const paymentProofPath = req.body.paymentProofPath as string | undefined;
     if (req.file) {
+      // Legacy flow: client sent file directly — upload it now
       try {
         paymentProofUrl = await uploadToSupabase(req.file, "orders/payment-proofs");
         paymentProofFileName = req.file.originalname;
@@ -25,6 +37,11 @@ export const createProductOrder = async (req: Request, res: Response) => {
       } catch (uploadError: any) {
         return res.status(500).json({ success: false, message: "Payment proof upload failed", error: uploadError.message });
       }
+    } else if (paymentProofPath) {
+      // New flow: client uploaded the file first and sent us the URL/path
+      paymentProofUrl = paymentProofPath;
+      paymentProofFileName = req.body.paymentProofFileName as string | undefined;
+      paymentProofMimeType = req.body.paymentProofMimeType as string | undefined;
     }
 
     const userId = (req as any).user.id;

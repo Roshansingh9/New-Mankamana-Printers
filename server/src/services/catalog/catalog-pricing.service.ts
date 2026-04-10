@@ -70,6 +70,7 @@ export const listActiveProductsService = async () => {
       product_code: true,
       name: true,
       description: true,
+      image_url: true,
       production_days: true,
     },
     orderBy: { created_at: "asc" },
@@ -79,6 +80,23 @@ export const listActiveProductsService = async () => {
     ...product,
     production_days: Number(product.production_days),
   }));
+};
+
+// getActiveProductByIdService: Returns a single active product by id
+export const getActiveProductByIdService = async (productId: string) => {
+  const product = await prisma.product.findFirst({
+    where: { id: productId, is_active: true },
+    select: {
+      id: true,
+      product_code: true,
+      name: true,
+      description: true,
+      image_url: true,
+      production_days: true,
+    },
+  });
+  if (!product) throw new ApiError("Product not found.", 404, "PRODUCT_NOT_FOUND");
+  return { ...product, production_days: Number(product.production_days) };
 };
 
 // listActiveVariantsByProductService: Returns active variants for a specific active product

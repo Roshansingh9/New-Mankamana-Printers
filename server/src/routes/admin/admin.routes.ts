@@ -4,7 +4,6 @@ import * as authController from "../../controller/auth/auth.controller";
 import { protect, restrictTo } from "../../middleware/auth.middleware";
 import * as designSubmissionController from "../../controller/design/design-submission.controller";
 import * as approvedDesignController from "../../controller/design/approved-design.controller";
-import * as serviceController from "../../controller/printing-service.controller";
 import * as adminProductController from "../../controller/catalog/admin-product.controller";
 import * as adminPricingController from "../../controller/catalog/admin-pricing.controller";
 import * as adminCatalogController from "../../controller/admin/admin-catalog.controller";
@@ -39,6 +38,9 @@ router.patch("/registration-requests/:request_id/reject", protect, restrictTo("A
 router.get("/clients", protect, restrictTo("ADMIN"), adminController.getClients);
 router.get("/clients/:id", protect, restrictTo("ADMIN"), adminController.getClientById);
 router.post("/clients/:id/reset-password", protect, restrictTo("ADMIN"), adminController.resetClientPassword);
+router.patch("/clients/:id/toggle-status", protect, restrictTo("ADMIN"), adminController.toggleClientStatus);
+router.get("/clients/:id/orders", protect, restrictTo("ADMIN"), adminController.getClientOrders);
+router.get("/clients/:id/designs", protect, restrictTo("ADMIN"), adminController.getClientDesigns);
 
 // DESIGN SUBMISSIONS: Review, approve, or reject custom designs submitted by clients
 router.get("/design-submissions", protect, restrictTo("ADMIN"), designSubmissionController.getAdminSubmissions);
@@ -63,9 +65,6 @@ const upload = multer({
 // TEMPLATES: Manage design templates and categories for client use
 router.post("/templates/categories", protect, restrictTo("ADMIN"), templateController.createTemplateCategory);
 router.post("/templates", protect, restrictTo("ADMIN"), upload.single("file"), templateController.createTemplate);
-
-// PRINTING SERVICES MANAGEMENT: Add new general printing services to the public list
-router.post("/services", protect, restrictTo("ADMIN"), serviceController.createService);
 
 // CATALOG MANAGEMENT (Admin UI simplified model): Services -> Products -> Fields -> Options -> Pricing
 router.get("/services", protect, restrictTo("ADMIN"), adminCatalogController.listServices);

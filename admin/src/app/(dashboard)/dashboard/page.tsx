@@ -115,8 +115,56 @@ export default function DashboardPage() {
     toast({ title: "Copied to clipboard", description: `Design ID ${generatedId} copied.` });
   };
 
-  const handleExportReport = () => {
-    toast({ title: "Report Exported", description: "Monthly report exported to CSV." });
+  const handleExportReport = async () => {
+    try {
+      toast({ title: "Generating Report…", description: "Fetching order data." });
+
+      const res = await fetch("/api/admin/orders", { cache: "no-store" });
+      const json = await res.json();
+      const allOrders: RecentOrder[] = Array.isArray(json) ? json : json.data ?? [];
+
+      // Filter to current month
+      const now = new Date();
+      const month = now.getMonth();
+      const year = now.getFullYear();
+      const monthOrders = allOrders.filter((o) => {
+        const d = new Date(o.created_at);
+        return d.getMonth() === month && d.getFullYear() === year;
+      });
+
+      if (monthOrders.length === 0) {
+        toast({ title: "No Data", description: "No orders found for the current month." });
+        return;
+      }
+
+      // Build CSV
+      const headers = ["Order ID", "Client", "Product", "Variant", "Status", "Amount (NPR)", "Date"];
+      const rows = monthOrders.map((o) => [
+        o.id,
+        o.client?.business_name ?? "",
+        o.variant?.product?.name ?? "",
+        o.variant?.variant_name ?? "",
+        STATUS_LABELS[o.status] ?? o.status,
+        o.final_amount.toFixed(2),
+        new Date(o.created_at).toLocaleDateString("en-NP"),
+      ]);
+
+      const csvContent = [headers, ...rows]
+        .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+        .join("\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `monthly-report-${year}-${String(month + 1).padStart(2, "0")}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+
+      toast({ title: "Report Exported", description: `${monthOrders.length} orders exported to CSV.` });
+    } catch {
+      toast({ title: "Export Failed", description: "Could not generate the monthly report.", variant: "destructive" });
+    }
   };
 
   return (

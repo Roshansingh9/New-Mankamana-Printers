@@ -10,6 +10,7 @@ import { ApiError } from "../../utils/api-error";
 import {
   buildLegacyCalculatePriceResponse,
   calculateCatalogPricingService,
+  getActiveProductByIdService,
   listActiveProductsService,
   listActiveVariantsByProductService,
   listVariantOptionsService,
@@ -56,6 +57,17 @@ export const getProductsController = async (_req: Request, res: Response) => {
     });
   } catch (error) {
     return sendErrorResponse(res, error, "Get products failed");
+  }
+};
+
+// getProductByIdController: Returns a single active product by id
+export const getProductByIdController = async (req: Request, res: Response) => {
+  try {
+    const params = productIdParamSchema.parse(req.params);
+    const product = await getActiveProductByIdService(params.productId);
+    return res.status(200).json({ success: true, data: product });
+  } catch (error) {
+    return sendErrorResponse(res, error, "Get product by id failed");
   }
 };
 

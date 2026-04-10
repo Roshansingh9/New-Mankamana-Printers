@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Search, Users, Phone, Mail, Building2, RefreshCw, KeyRound, MapPin, User, Eye } from "lucide-react";
+import { Search, Users, Phone, Mail, Building2, RefreshCw, KeyRound, MapPin, User, Eye, Ban, CheckCircle, FileText, Download, ExternalLink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface Client {
@@ -27,14 +27,49 @@ interface ResetResult {
   new_password: string;
 }
 
+interface ClientOrder {
+  id: string;
+  status: string;
+  quantity: number;
+  final_amount: string | number;
+  created_at: string;
+  variant: { variant_name: string; product: { name: string } };
+  approvedDesign?: { designCode: string } | null;
+}
+
+interface ClientDesign {
+  id: string;
+  title?: string | null;
+  status: string;
+  submittedAt: string;
+  fileUrl: string;
+  fileType: string;
+  feedbackMessage?: string | null;
+  approvedDesign?: { designCode: string } | null;
+}
+
+const ORDER_STATUS_LABELS: Record<string, string> = {
+  ORDER_PLACED: "Placed",
+  ORDER_PROCESSING: "Processing",
+  ORDER_PREPARED: "Prepared",
+  ORDER_DISPATCHED: "Dispatched",
+  ORDER_DELIVERED: "Delivered",
+  ORDER_CANCELLED: "Cancelled",
+};
+
 export default function ClientsPage() {
   const { toast } = useToast();
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [resettingId, setResettingId] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const [resetResult, setResetResult] = useState<ResetResult | null>(null);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [clientOrders, setClientOrders] = useState<ClientOrder[]>([]);
+  const [clientDesigns, setClientDesigns] = useState<ClientDesign[]>([]);
+  const [detailTab, setDetailTab] = useState<"info" | "orders" | "designs">("info");
+  const [detailLoading, setDetailLoading] = useState(false);
 
   const handleResetPassword = async (client: Client) => {
     setResettingId(client.id);
@@ -47,6 +82,24 @@ export default function ClientsPage() {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     } finally {
       setResettingId(null);
+    }
+  };
+
+  const handleToggleStatus = async (client: Client) => {
+    setTogglingId(client.id);
+    try {
+      const res = await fetch(`/api/admin/clients/${client.id}/toggle-status`, { method: "PATCH" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || "Failed to update status");
+      toast({ title: "Success", description: json.message });
+      setClients((prev) => prev.map((c) => c.id === client.id ? { ...c, status: json.status } : c));
+      if (selectedClient?.id === client.id) {
+        setSelectedClient((prev) => prev ? { ...prev, status: json.status } : prev);
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setTogglingId(null);
     }
   };
 
@@ -66,6 +119,41 @@ export default function ClientsPage() {
   };
 
   useEffect(() => { fetchClients(); }, []);
+
+  const openClientDetail = async (client: Client) => {
+    setSelectedClient(client);
+    setDetailTab("info");
+    setDetailLoading(true);
+    try {
+      const [ordersRes, designsRes] = await Promise.all([
+        fetch(`/api/admin/clients/${client.id}/orders`),
+        fetch(`/api/admin/clients/${client.id}/designs`),
+      ]);
+      const [ordersJson, designsJson] = await Promise.all([ordersRes.json(), designsRes.json()]);
+      setClientOrders(ordersJson.data || []);
+      setClientDesigns(designsJson.data || []);
+    } catch {
+      setClientOrders([]);
+      setClientDesigns([]);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const handleDownload = async (url: string, title: string, fileType?: string) => {
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `${title}.${fileType || "file"}`;
+      a.click();
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      window.open(url, "_blank");
+    }
+  };
 
   const filtered = clients.filter((c) => {
     const q = search.toLowerCase();
@@ -139,14 +227,14 @@ export default function ClientsPage() {
                     <th className="px-6 py-4 font-semibold">Client</th>
                     <th className="px-6 py-4 font-semibold">Contact</th>
                     <th className="px-6 py-4 font-semibold">Status</th>
-                    <th className="px-6 py-4 text-right font-semibold">Joined</th>
+                    <th className="px-6 py-4 text-right font-semibold">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {filtered.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="px-6 py-8 text-center text-slate-500">
-                        {loading ? "Loading..." : "No clients found."}
+                        No clients found.
                       </td>
                     </tr>
                   ) : (
@@ -154,7 +242,7 @@ export default function ClientsPage() {
                       <tr
                         key={client.id}
                         className="cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40"
-                        onClick={() => setSelectedClient(client)}
+                        onClick={() => openClientDetail(client)}
                       >
                         <td className="px-6 py-4">
                           <div className="text-sm font-semibold text-slate-900 dark:text-white">
@@ -188,9 +276,8 @@ export default function ClientsPage() {
                               type="button"
                               variant="outline"
                               size="sm"
-                              onClick={(e) => { e.stopPropagation(); setSelectedClient(client); }}
+                              onClick={(e) => { e.stopPropagation(); openClientDetail(client); }}
                               className="gap-1 text-xs"
-                              title="View Details"
                             >
                               <Eye className="h-3 w-3" />
                               Details
@@ -204,7 +291,18 @@ export default function ClientsPage() {
                               className="gap-1 text-xs"
                             >
                               <KeyRound className="h-3 w-3" />
-                              {resettingId === client.id ? "Resetting..." : "Reset"}
+                              {resettingId === client.id ? "…" : "Reset"}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={togglingId === client.id}
+                              onClick={(e) => { e.stopPropagation(); handleToggleStatus(client); }}
+                              className={`gap-1 text-xs ${client.status === "active" ? "text-red-600 hover:text-red-700 border-red-200 hover:border-red-300" : "text-emerald-600 hover:text-emerald-700 border-emerald-200 hover:border-emerald-300"}`}
+                            >
+                              {client.status === "active" ? <Ban className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />}
+                              {togglingId === client.id ? "…" : client.status === "active" ? "Deactivate" : "Activate"}
                             </Button>
                           </div>
                         </td>
@@ -217,13 +315,14 @@ export default function ClientsPage() {
           )}
         </CardContent>
       </Card>
+
       {/* Reset password result dialog */}
       <Dialog open={!!resetResult} onOpenChange={() => setResetResult(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>New Credentials Generated</DialogTitle>
             <DialogDescription>
-              The password has been reset and emailed to the client. Copy it below before closing.
+              The password has been reset and emailed to the client.
             </DialogDescription>
           </DialogHeader>
           {resetResult && (
@@ -232,99 +331,162 @@ export default function ClientsPage() {
                 <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Login ID (Phone)</p>
                 <p className="font-mono font-semibold text-slate-900 dark:text-white">{resetResult.phone_number}</p>
               </div>
-              <div>
-                <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">New Password</p>
-                <p className="font-mono text-xl font-bold tracking-widest text-[#0061FF]">{resetResult.new_password}</p>
-              </div>
             </div>
           )}
-          <Button type="button" onClick={() => setResetResult(null)} className="w-full bg-[#0061FF] hover:bg-[#0050d5]">
-            Done
-          </Button>
+          <Button type="button" onClick={() => setResetResult(null)} className="w-full bg-[#0061FF] hover:bg-[#0050d5]">Done</Button>
         </DialogContent>
       </Dialog>
 
       {/* Client detail dialog */}
       <Dialog open={!!selectedClient} onOpenChange={() => setSelectedClient(null)}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Building2 className="h-5 w-5 text-[#0061FF]" />
               {selectedClient?.business_name}
             </DialogTitle>
-            <DialogDescription>
-              Client profile and account details
-            </DialogDescription>
+            <DialogDescription>Client profile, orders, and designs</DialogDescription>
           </DialogHeader>
-          {selectedClient && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Client Code</p>
-                  <p className="mt-1 font-mono text-sm font-bold text-[#0061FF]">
-                    {selectedClient.client_code ?? selectedClient.id.slice(0, 8)}
-                  </p>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Status</p>
-                  <p className="mt-1">
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${selectedClient.status === "active" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" : "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300"}`}>
-                      {selectedClient.status === "active" ? "Active" : "Inactive"}
-                    </span>
-                  </p>
-                </div>
-              </div>
-              <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-                <div className="flex items-start gap-3">
-                  <User className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Owner</p>
-                    <p className="text-sm font-medium text-slate-900 dark:text-white">{selectedClient.owner_name}</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Phone className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Phone</p>
-                    <p className="text-sm font-medium text-slate-900 dark:text-white">{selectedClient.phone_number}</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Mail className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Email</p>
-                    <p className="text-sm font-medium text-slate-900 dark:text-white">{selectedClient.email}</p>
-                  </div>
-                </div>
-                {selectedClient.address && (
-                  <div className="flex items-start gap-3">
-                    <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Address</p>
-                      <p className="text-sm font-medium text-slate-900 dark:text-white">{selectedClient.address}</p>
+
+          {/* Tabs */}
+          <div className="flex gap-1 border-b border-slate-200">
+            {(["info", "orders", "designs"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setDetailTab(tab)}
+                className={`px-4 py-2 text-sm font-medium capitalize transition-colors border-b-2 -mb-px ${detailTab === tab ? "border-[#0061FF] text-[#0061FF]" : "border-transparent text-slate-500 hover:text-slate-700"}`}
+              >
+                {tab}
+                {tab === "orders" && !detailLoading && ` (${clientOrders.length})`}
+                {tab === "designs" && !detailLoading && ` (${clientDesigns.length})`}
+              </button>
+            ))}
+          </div>
+
+          {detailLoading ? (
+            <div className="py-8 text-center text-sm text-slate-400 animate-pulse">Loading…</div>
+          ) : (
+            <>
+              {detailTab === "info" && selectedClient && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Client Code</p>
+                      <p className="mt-1 font-mono text-sm font-bold text-[#0061FF]">
+                        {selectedClient.client_code ?? selectedClient.id.slice(0, 8)}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Status</p>
+                      <p className="mt-1">
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${selectedClient.status === "active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                          {selectedClient.status === "active" ? "Active" : "Inactive"}
+                        </span>
+                      </p>
                     </div>
                   </div>
-                )}
-                <div className="flex items-start gap-3">
-                  <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Joined</p>
-                    <p className="text-sm font-medium text-slate-900 dark:text-white">
-                      {selectedClient.createdAt ? new Date(selectedClient.createdAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "—"}
-                    </p>
+                  <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+                    {[
+                      { icon: User, label: "Owner", value: selectedClient.owner_name },
+                      { icon: Phone, label: "Phone", value: selectedClient.phone_number },
+                      { icon: Mail, label: "Email", value: selectedClient.email },
+                      ...(selectedClient.address ? [{ icon: MapPin, label: "Address", value: selectedClient.address }] : []),
+                      { icon: Building2, label: "Joined", value: selectedClient.createdAt ? new Date(selectedClient.createdAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "—" },
+                    ].map(({ icon: Icon, label, value }) => (
+                      <div key={label} className="flex items-start gap-3">
+                        <Icon className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
+                          <p className="text-sm font-medium text-slate-900 dark:text-white">{value}</p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              </div>
-            </div>
+              )}
+
+              {detailTab === "orders" && (
+                <div>
+                  {clientOrders.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-slate-400">No orders yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {clientOrders.map((order) => (
+                        <div key={order.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <span className="font-semibold text-slate-800">{order.variant.product.name}</span>
+                              <span className="text-slate-500"> — {order.variant.variant_name}</span>
+                            </div>
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${order.status === "ORDER_DELIVERED" ? "bg-emerald-100 text-emerald-700" : order.status === "ORDER_CANCELLED" ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700"}`}>
+                              {ORDER_STATUS_LABELS[order.status] ?? order.status}
+                            </span>
+                          </div>
+                          <div className="mt-1 flex gap-4 text-xs text-slate-500">
+                            <span>Qty: {order.quantity}</span>
+                            <span>NPR {Number(order.final_amount).toLocaleString()}</span>
+                            <span>{new Date(order.created_at).toLocaleDateString()}</span>
+                            {order.approvedDesign && <span className="font-mono text-[#0061FF]">{order.approvedDesign.designCode}</span>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {detailTab === "designs" && (
+                <div>
+                  {clientDesigns.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-slate-400">No design submissions yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {clientDesigns.map((design) => (
+                        <div key={design.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <FileText className="h-4 w-4 text-slate-400 shrink-0" />
+                              <div>
+                                <div className="font-semibold text-slate-800">{design.title || `Submission ${design.id.slice(0, 6)}`}</div>
+                                <div className="text-xs text-slate-500">{new Date(design.submittedAt).toLocaleDateString()}{design.approvedDesign && <span className="ml-2 font-mono text-[#0061FF]">{design.approvedDesign.designCode}</span>}</div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${design.status === "APPROVED" ? "bg-emerald-100 text-emerald-700" : design.status === "REJECTED" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>
+                                {design.status === "PENDING_REVIEW" ? "Pending" : design.status === "APPROVED" ? "Approved" : "Rejected"}
+                              </span>
+                              <a href={design.fileUrl} target="_blank" rel="noreferrer" className="rounded p-1 hover:bg-slate-200" title="Open">
+                                <ExternalLink className="h-3.5 w-3.5 text-slate-500" />
+                              </a>
+                              <button type="button" onClick={() => handleDownload(design.fileUrl, design.title || design.id, design.fileType)} className="rounded p-1 hover:bg-slate-200" title="Download">
+                                <Download className="h-3.5 w-3.5 text-slate-500" />
+                              </button>
+                            </div>
+                          </div>
+                          {design.feedbackMessage && (
+                            <p className="mt-2 text-xs text-red-600 bg-red-50 rounded px-2 py-1">{design.feedbackMessage}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )}
-          <div className="flex gap-2">
+
+          <div className="flex gap-2 pt-2 border-t border-slate-100">
+            <Button type="button" variant="outline" className="flex-1" onClick={() => setSelectedClient(null)}>Close</Button>
             <Button
               type="button"
               variant="outline"
-              className="flex-1"
-              onClick={() => setSelectedClient(null)}
+              className={`flex-1 gap-2 ${selectedClient?.status === "active" ? "text-red-600 border-red-200 hover:border-red-300" : "text-emerald-600 border-emerald-200 hover:border-emerald-300"}`}
+              disabled={togglingId === selectedClient?.id}
+              onClick={() => { if (selectedClient) handleToggleStatus(selectedClient); }}
             >
-              Close
+              {selectedClient?.status === "active" ? <Ban className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
+              {selectedClient?.status === "active" ? "Deactivate Account" : "Activate Account"}
             </Button>
             <Button
               type="button"

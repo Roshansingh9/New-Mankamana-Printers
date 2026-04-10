@@ -124,3 +124,37 @@ export const resetClientPassword = async (req: Request, res: Response, next: Nex
     next(error);
   }
 };
+
+// toggleClientStatus: Activates or deactivates a client account and sends email on deactivation
+export const toggleClientStatus = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    const result = await adminService.toggleClientStatusService(id, reason);
+    res.status(200).json(result);
+  } catch (error: any) {
+    next(error);
+  }
+};
+
+// getClientOrders: Returns all orders placed by a specific client for admin view
+export const getClientOrders = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const data = await adminService.getClientOrdersAdminService(id);
+    res.status(200).json({ success: true, data });
+  } catch (error: any) {
+    next(error);
+  }
+};
+
+// getClientDesigns: Returns all design submissions by a specific client for admin view
+export const getClientDesigns = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const data = await adminService.getClientDesignsAdminService(id);
+    res.status(200).json({ success: true, data });
+  } catch (error: any) {
+    next(error);
+  }
+};
