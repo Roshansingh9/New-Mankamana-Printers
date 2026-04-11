@@ -66,20 +66,32 @@ app.use("/api/v1/admin/wallet", adminWalletRoutes);
 // Swagger UI
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerOutput));
 
-//health check
-app.get("/",(req:Request,res:Response)=>{
-  res.json({message:"API is running"})
-}
-)
+// Health check
+app.get("/", (req: Request, res: Response) => {
+  res.json({ message: "API is running" });
+});
+
+// Vercel Cron — sweeps stale ORDER_PLACED orders every 5 minutes
+app.get("/api/v1/admin/sweep", (req: Request, res: Response) => {
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && req.headers["authorization"] !== `Bearer ${cronSecret}`) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+  sweepStalePlacedOrders()
+    .then(() => res.json({ ok: true }))
+    .catch((err) => res.status(500).json({ error: err.message }));
+});
 
 app.use(globalErrorHandler);
 
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
-  // Advance any ORDER_PLACED orders that were stuck before server restart
-  sweepStalePlacedOrders().catch((err) =>
-    console.error("[AutoTransition] Startup sweep failed:", err)
-  );
-});
+// Only start the HTTP server when running directly (not on Vercel serverless)
+if (process.env.VERCEL !== "1") {
+  app.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`);
+    sweepStalePlacedOrders().catch((err) =>
+      console.error("[AutoTransition] Startup sweep failed:", err)
+    );
+  });
+}
 
 export default app;
