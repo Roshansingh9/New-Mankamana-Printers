@@ -101,11 +101,6 @@ if (process.env.VERCEL !== "1") {
       console.error("[AutoTransition] Startup sweep failed:", err)
     );
   });
-} else {
-  // On Vercel: run sweep on module load (each cold start)
-  sweepStalePlacedOrders().catch((err) =>
-    console.error("[AutoTransition] Cold-start sweep failed:", err)
-  );
 }
 
 export default app;
