@@ -25,8 +25,8 @@ export const uploadFile = async (req: Request, res: Response) => {
     const requestedFolder = String(req.body.folder || "general");
     const folder = ALLOWED_FOLDERS.has(requestedFolder) ? requestedFolder : "general";
 
-    const filePath = await uploadToSupabasePath(req.file, folder);
-    const fileUrl = getSupabasePublicUrl(filePath);
+    const { path: filePath, bucket, isPrivate } = await uploadToSupabasePath(req.file, folder);
+    const fileUrl = isPrivate ? filePath : getSupabasePublicUrl(filePath, bucket);
 
     res.status(200).json({
       success: true,

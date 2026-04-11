@@ -128,7 +128,7 @@ export const resetClientPassword = async (req: Request, res: Response, next: Nex
 // toggleClientStatus: Activates or deactivates a client account and sends email on deactivation
 export const toggleClientStatus = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { id } = req.params;
+    const id = req.params.id as string;
     const { reason } = req.body;
     const result = await adminService.toggleClientStatusService(id, reason);
     res.status(200).json(result);
@@ -140,7 +140,7 @@ export const toggleClientStatus = async (req: Request, res: Response, next: Next
 // getClientOrders: Returns all orders placed by a specific client for admin view
 export const getClientOrders = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { id } = req.params;
+    const id = req.params.id as string;
     const data = await adminService.getClientOrdersAdminService(id);
     res.status(200).json({ success: true, data });
   } catch (error: any) {
@@ -151,7 +151,7 @@ export const getClientOrders = async (req: Request, res: Response, next: NextFun
 // getClientDesigns: Returns all design submissions by a specific client for admin view
 export const getClientDesigns = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { id } = req.params;
+    const id = req.params.id as string;
     const data = await adminService.getClientDesignsAdminService(id);
     res.status(200).json({ success: true, data });
   } catch (error: any) {

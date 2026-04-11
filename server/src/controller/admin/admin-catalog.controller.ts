@@ -102,7 +102,7 @@ export const listProducts = async (req: Request, res: Response) => {
 
 export const createProductUnderService = async (req: Request, res: Response) => {
   try {
-    const { serviceId } = req.params;
+    const serviceId = req.params.serviceId as string;
     const { product_code, name, description } = req.body;
     if (!product_code || !name) {
       return res.status(400).json({ success: false, message: "product_code and name are required" });
@@ -152,7 +152,7 @@ export const createProductUnderService = async (req: Request, res: Response) => 
 
 export const getProductById = async (req: Request, res: Response) => {
   try {
-    const { productId } = req.params;
+    const productId = req.params.productId as string;
     const product = await prisma.product.findUnique({
       where: { id: productId },
       include: {
@@ -204,7 +204,7 @@ export const getProductById = async (req: Request, res: Response) => {
 
 export const updateProduct = async (req: Request, res: Response) => {
   try {
-    const { productId } = req.params;
+    const productId = req.params.productId as string;
     const { name, description, product_code } = req.body;
 
     const product = await prisma.product.update({
@@ -239,7 +239,7 @@ export const removeProductDiscount = async (req: Request, res: Response) => {
 
 export const createProductField = async (req: Request, res: Response) => {
   try {
-    const { productId } = req.params;
+    const productId = req.params.productId as string;
     const { field_key, label, is_required, display_order } = req.body;
     if (!field_key || !label) {
       return res.status(400).json({ success: false, message: "field_key and label are required" });
@@ -281,7 +281,7 @@ export const createProductField = async (req: Request, res: Response) => {
 
 export const updateField = async (req: Request, res: Response) => {
   try {
-    const { fieldId } = req.params;
+    const fieldId = req.params.fieldId as string;
     const { label, is_required, display_order } = req.body;
 
     const group = await prisma.optionGroup.update({
@@ -319,7 +319,7 @@ export const updateField = async (req: Request, res: Response) => {
 
 export const createFieldOption = async (req: Request, res: Response) => {
   try {
-    const { fieldId } = req.params;
+    const fieldId = req.params.fieldId as string;
     const { value, label, display_order } = req.body;
     if (!value || !label) {
       return res.status(400).json({ success: false, message: "value and label are required" });
@@ -347,7 +347,7 @@ export const createFieldOption = async (req: Request, res: Response) => {
 
 export const updateOption = async (req: Request, res: Response) => {
   try {
-    const { optionId } = req.params;
+    const optionId = req.params.optionId as string;
     const { value, label, display_order } = req.body;
 
     const optionValue = await prisma.optionValue.update({
@@ -371,7 +371,7 @@ export const updateOption = async (req: Request, res: Response) => {
 
 export const getProductPricing = async (req: Request, res: Response) => {
   try {
-    const { productId } = req.params;
+    const productId = req.params.productId as string;
     const variant = await prisma.productVariant.findFirst({
       where: { product_id: productId },
       include: {
@@ -421,7 +421,7 @@ export const getProductPricing = async (req: Request, res: Response) => {
 
 export const createProductPricing = async (req: Request, res: Response) => {
   try {
-    const { productId } = req.params;
+    const productId = req.params.productId as string;
     const { selectedOptions, unit_price, discount_type, discount_value } = req.body;
 
     if (!unit_price) {
@@ -493,7 +493,7 @@ export const createProductPricing = async (req: Request, res: Response) => {
 
 export const updatePricingRow = async (req: Request, res: Response) => {
   try {
-    const { pricingId } = req.params;
+    const pricingId = req.params.pricingId as string;
     const { unit_price, discount_type, discount_value } = req.body;
 
     const pricing = await prisma.variantPricing.update({
@@ -520,7 +520,7 @@ export const updatePricingRow = async (req: Request, res: Response) => {
 
 export const removePricingDiscount = async (req: Request, res: Response) => {
   try {
-    const { pricingId } = req.params;
+    const pricingId = req.params.pricingId as string;
     await prisma.variantPricing.update({
       where: { id: pricingId },
       data: { discount_type: null, discount_value: 0 },
