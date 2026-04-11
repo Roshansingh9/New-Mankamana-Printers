@@ -1,11 +1,5 @@
 import { Router } from "express";
 import multer from "multer";
-import fs from "fs";
-
-const uploadDir = "uploads/";
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
 import { protect, restrictTo } from "../../middleware/auth.middleware";
 import { createDesignSubmission, getMySubmissions, getMySubmissionById } from "../../controller/design/design-submission.controller";
 
