@@ -17,7 +17,14 @@ import clientWalletRoutes from "./routes/wallet/client-wallet.routes";
 import adminWalletRoutes from "./routes/wallet/admin-wallet.routes";
 import { globalErrorHandler } from "./middleware/error.middleware";
 import swaggerUi from "swagger-ui-express";
-const swaggerOutput = require("../swagger-output.json");
+let swaggerOutput: object | null = null;
+if (process.env.VERCEL !== "1") {
+  try {
+    swaggerOutput = require("../swagger-output.json");
+  } catch {
+    // swagger-output.json is generated locally via `npm run swagger`; skip if absent
+  }
+}
 
 const app = express();
 const port = process.env.PORT || 8005;
@@ -63,8 +70,10 @@ app.use("/api/v1/orders", productOrderRoutes);
 app.use("/api/v1/wallet", clientWalletRoutes);
 app.use("/api/v1/admin/wallet", adminWalletRoutes);
 
-// Swagger UI
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerOutput));
+// Swagger UI (only available when swagger-output.json has been generated locally)
+if (swaggerOutput) {
+  app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerOutput));
+}
 
 // Health check
 app.get("/", (req: Request, res: Response) => {
