@@ -187,6 +187,7 @@ model Product {
   name            String           @db.VarChar(100)
   description     String?          @db.Text
   image_url       String?          @db.Text
+  preview_images  String[]         @default([])
   production_days Int              @default(3)
   is_active       Boolean          @default(true)
   created_at      DateTime         @default(now())

@@ -92,6 +92,7 @@ export const getActiveProductByIdService = async (productId: string) => {
       name: true,
       description: true,
       image_url: true,
+      preview_images: true,
       production_days: true,
     },
   });

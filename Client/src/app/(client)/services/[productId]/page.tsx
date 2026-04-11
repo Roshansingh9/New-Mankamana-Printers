@@ -13,6 +13,7 @@ interface Product {
     name: string;
     description: string | null;
     image_url: string | null;
+    preview_images: string[];
     production_days: number;
     product_code: string;
 }
@@ -86,6 +87,7 @@ export default function ProductOrderPage({ params }: { params: Promise<{ product
     const { user } = useAuthStore();
 
     const [step, setStep] = useState<1 | 2>(1);
+    const [previewIndex, setPreviewIndex] = useState(0);
     const [product, setProduct] = useState<Product | null>(null);
     const [variants, setVariants] = useState<Variant[]>([]);
     const [selectedVariantId, setSelectedVariantId] = useState("");
@@ -284,66 +286,105 @@ export default function ProductOrderPage({ params }: { params: Promise<{ product
         );
     }
 
-    const renderStep1 = () => (
-        <div className="flex flex-col gap-5">
-            {/* Product info card */}
-            <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 flex gap-4">
-                {product.image_url && (
-                    <div className="relative w-20 h-20 rounded-lg overflow-hidden shrink-0">
-                        <Image src={product.image_url} alt={product.name} fill className="object-cover" />
+    const renderStep1 = () => {
+        const images = [
+            ...(product.preview_images?.length ? product.preview_images : []),
+            ...(product.image_url ? [product.image_url] : []),
+        ].filter(Boolean);
+        const activeImg = images[previewIndex] ?? null;
+
+        return (
+        <div className="flex flex-col gap-4">
+
+            {/* ── Image carousel ── */}
+            <div className="rounded-xl overflow-hidden border border-gray-200 bg-white">
+                <div className="relative w-full h-56 bg-gray-50">
+                    {activeImg
+                        ? <Image src={activeImg} alt={product.name} fill className="object-contain p-2" />
+                        : <div className="w-full h-full flex items-center justify-center text-gray-300 text-xs">No image</div>
+                    }
+                    {images.length > 1 && <>
+                        <button type="button" aria-label="Previous image"
+                            onClick={() => setPreviewIndex(i => (i - 1 + images.length) % images.length)}
+                            className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white border border-gray-200 shadow flex items-center justify-center text-gray-500 hover:text-gray-800"
+                        >‹</button>
+                        <button type="button" aria-label="Next image"
+                            onClick={() => setPreviewIndex(i => (i + 1) % images.length)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white border border-gray-200 shadow flex items-center justify-center text-gray-500 hover:text-gray-800"
+                        >›</button>
+                    </>}
+                </div>
+                {images.length > 1 && (
+                    <div className="flex gap-1.5 px-3 pb-3 pt-2 overflow-x-auto">
+                        {images.map((src, i) => (
+                            <button key={i} type="button" aria-label={`Preview ${i + 1}`}
+                                onClick={() => setPreviewIndex(i)}
+                                className={`relative w-11 h-11 rounded-md shrink-0 overflow-hidden border-2 transition-colors ${i === previewIndex ? "border-blue-500" : "border-gray-200"}`}
+                            >
+                                <Image src={src} alt="" fill className="object-cover" />
+                            </button>
+                        ))}
                     </div>
                 )}
-                <div>
-                    <h2 className="font-bold text-base text-gray-900">{product.name}</h2>
-                    {product.description && <p className="text-xs text-gray-500 mt-1">{product.description}</p>}
-                    <p className="text-xs text-blue-600 mt-1 font-medium">Production: {product.production_days} day{product.production_days !== 1 ? "s" : ""}</p>
+                <div className="px-4 py-2.5 border-t border-gray-100">
+                    <p className="font-semibold text-sm text-gray-900">{product.name}</p>
+                    {product.description && <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{product.description}</p>}
                 </div>
             </div>
 
-            {/* Variant */}
+            {/* ── Variant ── */}
             <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">Variant</label>
-                {loadingVariants ? (
-                    <p className="text-sm text-gray-400 animate-pulse">Loading variants…</p>
-                ) : variants.length === 0 ? (
-                    <p className="text-sm text-red-500">No variants available for this product.</p>
-                ) : (
-                    <select
-                        value={selectedVariantId}
-                        onChange={(e) => { setSelectedVariantId(e.target.value); setOptionGroups([]); setSelectedOptions({}); setPricing(null); }}
-                        aria-label="Select variant"
-                        className="w-full px-3 py-2.5 rounded border border-gray-300 text-sm text-gray-800 bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-                    >
-                        <option value="">-- Choose a Variant --</option>
-                        {variants.map((v) => (
-                            <option key={v.id} value={v.id}>{v.variant_name}</option>
-                        ))}
-                    </select>
-                )}
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Variant</label>
+                <select
+                    value={selectedVariantId}
+                    onChange={(e) => { setSelectedVariantId(e.target.value); setOptionGroups([]); setSelectedOptions({}); setPricing(null); }}
+                    aria-label="Select variant"
+                    className="w-full px-3 py-2.5 rounded-lg border border-gray-300 text-sm text-gray-800 bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none"
+                >
+                    <option value="">— Select variant —</option>
+                    {variants.map(v => <option key={v.id} value={v.id}>{v.variant_name}</option>)}
+                </select>
             </div>
 
-            {/* Option Groups */}
-            {selectedVariantId && !loadingOptions && optionGroups.filter(g => g.name.toLowerCase() !== "quantity").length > 0 && (
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                    <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
-                        <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Configure Options</span>
+            {/* ── Configure Options ── */}
+            {selectedVariantId && !loadingOptions && (
+                <div className="rounded-xl border border-gray-200 overflow-hidden">
+                    <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200">
+                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Order Details</span>
                     </div>
                     <div className="px-4 py-4 flex flex-col gap-4 bg-white">
-                        {optionGroups.filter(g => g.name.toLowerCase() !== "quantity").map((group) => (
+                        {/* Quantity always first */}
+                        <div>
+                            <label htmlFor="qty" className="block text-sm font-medium text-gray-700 mb-1.5">
+                                Quantity <span className="text-xs text-gray-400 font-normal ml-1">Min. {minQty}</span>
+                            </label>
+                            <input
+                                id="qty"
+                                type="number"
+                                min={minQty}
+                                step={minQty}
+                                value={quantity}
+                                onChange={(e) => {
+                                    const raw = parseInt(e.target.value) || minQty;
+                                    setQuantity(Math.max(minQty, Math.round(raw / minQty) * minQty));
+                                }}
+                                className="w-32 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-800 text-center focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none"
+                            />
+                        </div>
+                        {/* Other options */}
+                        {optionGroups.filter(g => g.name.toLowerCase() !== "quantity").map(group => (
                             <div key={group.id}>
-                                <label className="block text-sm font-semibold text-blue-700 mb-1">
-                                    {group.label} {group.is_required && <span className="text-red-500">*</span>}
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                    {group.label}{group.is_required && <span className="text-red-400 ml-0.5">*</span>}
                                 </label>
                                 <select
                                     value={selectedOptions[group.name] || ""}
-                                    onChange={(e) => setSelectedOptions((prev) => ({ ...prev, [group.name]: e.target.value }))}
+                                    onChange={(e) => setSelectedOptions(prev => ({ ...prev, [group.name]: e.target.value }))}
                                     aria-label={group.label}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm text-gray-800 bg-gray-50 focus:border-blue-500 focus:bg-white outline-none"
+                                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-800 bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none"
                                 >
-                                    {!group.is_required && <option value="">-- None --</option>}
-                                    {group.values.map((v) => (
-                                        <option key={v.id} value={v.code}>{v.label}</option>
-                                    ))}
+                                    {!group.is_required && <option value="">— None —</option>}
+                                    {group.values.map(v => <option key={v.id} value={v.code}>{v.label}</option>)}
                                 </select>
                             </div>
                         ))}
@@ -351,96 +392,50 @@ export default function ProductOrderPage({ params }: { params: Promise<{ product
                 </div>
             )}
 
-            {/* Quantity */}
-            {selectedVariantId && (
+            {/* ── Approved Design ── */}
+            {selectedVariantId && approvedDesigns.length > 0 && (
                 <div>
-                    <label htmlFor="qty" className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">
-                        Quantity <span className="text-gray-400 font-normal normal-case">(min: {minQty})</span>
-                    </label>
-                    <input
-                        id="qty"
-                        type="number"
-                        min={minQty}
-                        step={minQty}
-                        value={quantity}
-                        onChange={(e) => {
-                            const raw = parseInt(e.target.value) || minQty;
-                            const snapped = Math.max(minQty, Math.round(raw / minQty) * minQty);
-                            setQuantity(snapped);
-                        }}
-                        className="w-32 px-3 py-2 border border-gray-300 rounded text-sm text-gray-800 text-center focus:border-blue-500 outline-none"
-                    />
-                </div>
-            )}
-
-            {/* Approved Design */}
-            {selectedVariantId && (
-                <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">
+                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
                         Approved Design <span className="text-gray-400 font-normal normal-case">(optional)</span>
                     </label>
-                    {approvedDesigns.length === 0 ? (
-                        <p className="text-xs text-gray-400 italic">No approved designs for this product yet.</p>
-                    ) : (
-                        <>
-                            <select
-                                value={designCode}
-                                onChange={(e) => setDesignCode(e.target.value)}
-                                aria-label="Select approved design"
-                                className="w-full px-3 py-2.5 rounded border border-gray-300 text-sm text-gray-800 bg-white focus:border-blue-500 outline-none"
-                            >
-                                <option value="">— No design (skip) —</option>
-                                {approvedDesigns.map((d) => (
-                                    <option key={d.designCode} value={d.designCode}>
-                                        {d.designCode}{d.title ? ` — ${d.title}` : ""}
-                                    </option>
-                                ))}
-                            </select>
-                            {/* Design preview */}
-                            {designCode && (() => {
-                                const selected = approvedDesigns.find(d => d.designCode === designCode);
-                                if (!selected?.approvedFileUrl) return null;
-                                const isImage = /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(selected.approvedFileUrl);
-                                return (
-                                    <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50 overflow-hidden">
-                                        {isImage ? (
-                                            <img
-                                                src={selected.approvedFileUrl}
-                                                alt={`Preview: ${selected.designCode}`}
-                                                className="w-full max-h-48 object-contain bg-white"
-                                            />
-                                        ) : (
-                                            <div className="px-4 py-3 flex items-center gap-2">
-                                                <span className="text-2xl">📄</span>
-                                                <span className="text-sm text-blue-700 font-medium">{selected.designCode}</span>
-                                            </div>
-                                        )}
-                                        <div className="px-3 py-2 flex items-center justify-between">
-                                            <div>
-                                                <p className="text-xs font-bold text-blue-700">{selected.designCode}</p>
-                                                {selected.title && <p className="text-[11px] text-blue-500">{selected.title}</p>}
-                                            </div>
-                                            <a
-                                                href={selected.approvedFileUrl}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-[11px] text-blue-600 underline hover:text-blue-800"
-                                            >
-                                                Open ↗
-                                            </a>
-                                        </div>
-                                    </div>
-                                );
-                            })()}
-                        </>
-                    )}
+                    <select
+                        value={designCode}
+                        onChange={(e) => setDesignCode(e.target.value)}
+                        aria-label="Select approved design"
+                        className="w-full px-3 py-2.5 rounded-lg border border-gray-300 text-sm text-gray-800 bg-white focus:border-blue-500 outline-none"
+                    >
+                        <option value="">— No design —</option>
+                        {approvedDesigns.map(d => (
+                            <option key={d.designCode} value={d.designCode}>
+                                {d.designCode}{d.title ? ` — ${d.title}` : ""}
+                            </option>
+                        ))}
+                    </select>
+                    {designCode && (() => {
+                        const sel = approvedDesigns.find(d => d.designCode === designCode);
+                        if (!sel?.approvedFileUrl) return null;
+                        const isImg = /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(sel.approvedFileUrl);
+                        return (
+                            <div className="mt-2 rounded-lg border border-gray-200 overflow-hidden">
+                                {isImg
+                                    ? <img src={sel.approvedFileUrl} alt={sel.designCode} className="w-full max-h-44 object-contain bg-gray-50" />
+                                    : <div className="px-4 py-3 text-sm text-gray-600 bg-gray-50">📄 {sel.designCode}</div>
+                                }
+                                <div className="px-3 py-2 flex items-center justify-between bg-white border-t border-gray-100">
+                                    <p className="text-xs font-medium text-gray-700">{sel.designCode}{sel.title ? ` — ${sel.title}` : ""}</p>
+                                    <a href={sel.approvedFileUrl} target="_blank" rel="noopener noreferrer"
+                                        className="text-xs text-blue-600 hover:underline">Open ↗</a>
+                                </div>
+                            </div>
+                        );
+                    })()}
                 </div>
             )}
 
-            {/* Notes */}
+            {/* ── Remarks ── */}
             {selectedVariantId && (
                 <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">
+                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
                         Remarks <span className="text-gray-400 font-normal normal-case">(optional)</span>
                     </label>
                     <textarea
@@ -448,63 +443,58 @@ export default function ProductOrderPage({ params }: { params: Promise<{ product
                         onChange={(e) => setNotes(e.target.value)}
                         rows={2}
                         placeholder="Any special instructions…"
-                        className="w-full px-3 py-2 rounded border border-gray-300 text-sm text-gray-800 resize-y focus:border-blue-500 outline-none"
+                        className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-700 resize-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none"
                     />
                 </div>
             )}
 
-            {/* Price Summary */}
+            {/* ── Price ── */}
             {selectedVariantId && (
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                    <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
-                        <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Price Summary</span>
-                    </div>
+                <div className="rounded-xl border border-gray-200 overflow-hidden">
                     {pricingLoading ? (
-                        <p className="px-4 py-4 text-sm text-gray-400 animate-pulse">Calculating price…</p>
+                        <p className="px-4 py-4 text-sm text-gray-400 animate-pulse text-center">Calculating…</p>
                     ) : pricing ? (
-                        <table className="w-full text-sm">
-                            <tbody>
-                                <tr className="border-b border-gray-100">
-                                    <td className="px-4 py-2.5 text-gray-500">Unit Price</td>
-                                    <td className="px-4 py-2.5 text-right font-medium">NPR {pricing.unit_price.toFixed(2)}</td>
-                                </tr>
-                                {pricing.discount > 0 && (
-                                    <tr className="border-b border-gray-100">
-                                        <td className="px-4 py-2.5 text-green-600">Discount</td>
-                                        <td className="px-4 py-2.5 text-right font-medium text-green-600">- NPR {pricing.discount.toFixed(2)}</td>
-                                    </tr>
-                                )}
-                                <tr className="border-b border-gray-100">
-                                    <td className="px-4 py-2.5 text-gray-500">Quantity</td>
-                                    <td className="px-4 py-2.5 text-right font-medium">× {pricing.quantity}</td>
-                                </tr>
-                                <tr>
-                                    <td className="px-4 py-3 font-bold text-gray-800">Total Payable</td>
-                                    <td className="px-4 py-3 text-right font-extrabold text-blue-600 text-lg">NPR {pricing.total_price.toFixed(2)}</td>
-                                </tr>
-                            </tbody>
-                        </table>
+                        <div className="divide-y divide-gray-100">
+                            <div className="px-4 py-2.5 flex justify-between text-sm">
+                                <span className="text-gray-500">Unit Price</span>
+                                <span className="font-medium text-gray-800">NPR {pricing.unit_price.toFixed(2)}</span>
+                            </div>
+                            {pricing.discount > 0 && (
+                                <div className="px-4 py-2.5 flex justify-between text-sm">
+                                    <span className="text-green-600">Discount</span>
+                                    <span className="font-medium text-green-600">− NPR {pricing.discount.toFixed(2)}</span>
+                                </div>
+                            )}
+                            <div className="px-4 py-2.5 flex justify-between text-sm">
+                                <span className="text-gray-500">Qty</span>
+                                <span className="font-medium text-gray-800">× {pricing.quantity}</span>
+                            </div>
+                            <div className="px-4 py-3 flex justify-between">
+                                <span className="font-semibold text-gray-800">Total</span>
+                                <span className="font-bold text-blue-600 text-lg">NPR {pricing.total_price.toFixed(2)}</span>
+                            </div>
+                        </div>
                     ) : (
-                        <p className="px-4 py-4 text-sm text-gray-400">Select all required options to see pricing.</p>
+                        <p className="px-4 py-4 text-sm text-gray-400 text-center">Select all options to see price.</p>
                     )}
                 </div>
             )}
 
-            <div className="flex gap-3">
-                <button type="button" onClick={() => router.push("/services")} className="px-4 py-3 border border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50">
+            {/* ── Actions ── */}
+            <div className="flex gap-3 pt-1">
+                <button type="button" onClick={() => router.push("/services")}
+                    className="px-5 py-2.5 border border-gray-300 text-gray-600 text-sm font-medium rounded-lg hover:bg-gray-50">
                     ← Back
                 </button>
-                <button
-                    type="button"
-                    onClick={handleProceedToPayment}
+                <button type="button" onClick={handleProceedToPayment}
                     disabled={!pricing || pricingLoading}
-                    className="flex-1 py-3 bg-blue-600 text-white text-sm font-bold uppercase tracking-wide rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
+                    className="flex-1 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed">
                     Proceed to Payment →
                 </button>
             </div>
         </div>
-    );
+        );
+    };
 
     const renderStep2 = () => (
         <div className="flex flex-col gap-5">
