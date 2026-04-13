@@ -51,6 +51,7 @@ const sendErrorResponse = (res: Response, error: unknown, context: string) => {
 export const getProductsController = async (_req: Request, res: Response) => {
   try {
     const products = await listActiveProductsService();
+    res.setHeader("Cache-Control", "private, max-age=60");
     return res.status(200).json({
       success: true,
       data: products,
@@ -65,6 +66,7 @@ export const getProductByIdController = async (req: Request, res: Response) => {
   try {
     const params = productIdParamSchema.parse(req.params);
     const product = await getActiveProductByIdService(params.productId);
+    res.setHeader("Cache-Control", "private, max-age=60");
     return res.status(200).json({ success: true, data: product });
   } catch (error) {
     return sendErrorResponse(res, error, "Get product by id failed");
@@ -76,6 +78,7 @@ export const getProductVariantsController = async (req: Request, res: Response) 
   try {
     const params = productIdParamSchema.parse(req.params);
     const variants = await listActiveVariantsByProductService(params.productId);
+    res.setHeader("Cache-Control", "private, max-age=60");
 
     return res.status(200).json({
       success: true,
@@ -93,6 +96,7 @@ export const getVariantOptionsController = async (req: Request, res: Response) =
   try {
     const params = variantIdParamSchema.parse(req.params);
     const options = await listVariantOptionsService(params.variantId);
+    res.setHeader("Cache-Control", "private, max-age=60");
 
     return res.status(200).json({
       success: true,
@@ -111,6 +115,7 @@ export const calculatePricingController = async (req: Request, res: Response) =>
   try {
     const body = calculatePricingBodySchema.parse(req.body);
     const pricing = await calculateCatalogPricingService(body);
+    res.setHeader("Cache-Control", "private, max-age=15");
 
     return res.status(200).json({
       success: true,

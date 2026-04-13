@@ -6,8 +6,17 @@ import { getWalletBalance, validateCheckout } from "../../controller/wallet/wall
 import { submitTopupRequest, getMyTopupRequests, getMyTopupRequestById } from "../../controller/wallet/topup-request.controller";
 import { getWalletTransactions, confirmWalletPayment } from "../../controller/wallet/wallet-transaction.controller";
 import { getClientNotifications, markClientNotificationRead } from "../../controller/wallet/wallet-notification.controller";
+import rateLimit from "express-rate-limit";
+import { requireIdempotencyKey } from "../../middleware/idempotency.middleware";
 
 const router = Router();
+const walletCriticalRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: "Too many wallet actions. Please try again shortly." },
+});
 
 // Multer memory storage for proof uploads to Supabase
 const storage = multer.memoryStorage();
@@ -32,7 +41,7 @@ router.use(protect, restrictTo("CLIENT"));
 router.get("/payment-details", getPaymentDetails);
 
 // Top-up requests: Submit new proof of transfer and track personal requests
-router.post("/topup-requests", upload.single("proofFile"), submitTopupRequest);
+router.post("/topup-requests", walletCriticalRateLimiter, requireIdempotencyKey, upload.single("proofFile"), submitTopupRequest);
 router.get("/topup-requests", getMyTopupRequests);
 router.get("/topup-requests/:requestId", getMyTopupRequestById);
 
@@ -43,11 +52,11 @@ router.get("/balance", getWalletBalance);
 router.get("/transactions", getWalletTransactions);
 
 // Validate checkout: Verify if wallet has sufficient funds for a potential order
-router.post("/validate-checkout", validateCheckout);
+router.post("/validate-checkout", walletCriticalRateLimiter, validateCheckout);
 
 // Notifications: Personal wallet-related push alerts
 router.get("/notifications", getClientNotifications);
-router.patch("/notifications/:notificationId/read", markClientNotificationRead);
+router.patch("/notifications/:notificationId/read", walletCriticalRateLimiter, requireIdempotencyKey, markClientNotificationRead);
 
 
 

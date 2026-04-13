@@ -1,5 +1,7 @@
 import { Request, Response } from "express";
 import { recordPageViewService, getVisitorStatsService } from "../../services/analytics/analytics.service";
+import { getPerformanceSnapshot } from "../../utils/performance-metrics";
+import { getCacheStats } from "../../utils/cache";
 
 // PUBLIC — no auth required; fire-and-forget from the client website
 export const trackPageView = async (req: Request, res: Response) => {
@@ -18,8 +20,23 @@ export const trackPageView = async (req: Request, res: Response) => {
 export const getVisitorStats = async (_req: Request, res: Response) => {
   try {
     const stats = await getVisitorStatsService();
+    res.setHeader("Cache-Control", "private, max-age=20");
     res.status(200).json({ success: true, data: stats });
   } catch (error) {
     res.status(500).json({ success: false, message: "Failed to fetch visitor stats" });
+  }
+};
+
+export const getPerformanceStats = async (_req: Request, res: Response) => {
+  try {
+    res.status(200).json({
+      success: true,
+      data: {
+        api: getPerformanceSnapshot(),
+        cache: getCacheStats(),
+      },
+    });
+  } catch {
+    res.status(500).json({ success: false, message: "Failed to fetch performance stats" });
   }
 };

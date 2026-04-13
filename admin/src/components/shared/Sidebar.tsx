@@ -15,6 +15,7 @@ import {
   Users,
   BadgeDollarSign,
 } from "lucide-react";
+import { cachedJsonFetch, invalidateCacheKey } from "@/lib/requestCache";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -25,9 +26,7 @@ export function Sidebar() {
   useEffect(() => {
     const fetchCounts = async () => {
       try {
-        const res = await fetch("/api/admin/dashboard/stats", { cache: "no-store" });
-        if (!res.ok) return;
-        const json = await res.json();
+        const json = await cachedJsonFetch<any>("dashboard-stats", "/api/admin/dashboard/stats", 8000);
         const d = json?.data;
         if (d) {
           setPendingRegistrations(d.pending_registrations || 0);
@@ -41,14 +40,18 @@ export function Sidebar() {
     const interval = setInterval(fetchCounts, 15000);
 
     // Refresh immediately when an action resolves a notification
-    window.addEventListener("stats-updated", fetchCounts);
+    const refreshNow = () => {
+      invalidateCacheKey("dashboard-stats");
+      void fetchCounts();
+    };
+    window.addEventListener("stats-updated", refreshNow);
     // Refresh when the tab regains focus
     const onVisible = () => { if (!document.hidden) fetchCounts(); };
     document.addEventListener("visibilitychange", onVisible);
 
     return () => {
       clearInterval(interval);
-      window.removeEventListener("stats-updated", fetchCounts);
+      window.removeEventListener("stats-updated", refreshNow);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);

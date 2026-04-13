@@ -7,6 +7,7 @@ import {
   getAdminTopupByIdService,
   approveTopupService,
   rejectTopupService,
+  adjustApprovedTopupService,
 } from "../../services/wallet/topup-request.service";
 import {
   submitTopupSchema,
@@ -14,8 +15,10 @@ import {
   adminTopupQuerySchema,
   approveTopupSchema,
   rejectTopupSchema,
+  adjustTopupSchema,
 } from "../../validators/wallet.validator";
 import { uploadToSupabase } from "../../utils/file-upload";
+import { withRequestDedupe } from "../../utils/request-dedupe";
 
 // submitTopupRequest: Allows a client to submit a proof-of-payment (file) for balance top-up approval
 export const submitTopupRequest = async (req: Request, res: Response) => {
@@ -192,11 +195,16 @@ export const approveTopupRequest = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: "Validation failed", errors: validated.error.issues });
     }
 
-    const result = await approveTopupService(
-      requestId,
-      adminId,
-      validated.data.approvedAmount,
-      validated.data.note
+    const result = await withRequestDedupe(
+      `admin:topup:approve:${adminId}:${requestId}`,
+      () =>
+        approveTopupService(
+          requestId,
+          adminId,
+          validated.data.approvedAmount,
+          validated.data.note
+        ),
+      8000
     );
 
     res.status(200).json({
@@ -229,11 +237,16 @@ export const rejectTopupRequest = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: "Validation failed", errors: validated.error.issues });
     }
 
-    const result = await rejectTopupService(
-      requestId,
-      adminId,
-      validated.data.reason,
-      validated.data.reasonCode
+    const result = await withRequestDedupe(
+      `admin:topup:reject:${adminId}:${requestId}`,
+      () =>
+        rejectTopupService(
+          requestId,
+          adminId,
+          validated.data.reason,
+          validated.data.reasonCode
+        ),
+      8000
     );
 
     res.status(200).json({
@@ -249,5 +262,46 @@ export const rejectTopupRequest = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error("Error rejecting topup:", error);
     res.status(400).json({ success: false, message: error.message || "Rejection failed" });
+  }
+};
+
+export const adjustApprovedTopupRequest = async (req: Request, res: Response) => {
+  try {
+    const requestId = req.params.requestId as string;
+    const adminId = (req as any).user.id;
+
+    const validated = adjustTopupSchema.safeParse(req.body);
+    if (!validated.success) {
+      return res.status(400).json({ success: false, message: "Validation failed", errors: validated.error.issues });
+    }
+
+    const result = await withRequestDedupe(
+      `admin:topup:adjust:${adminId}:${requestId}`,
+      () =>
+        adjustApprovedTopupService(
+          requestId,
+          adminId,
+          validated.data.approvedAmount,
+          validated.data.reason
+        ),
+      8000
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Top-up adjustment applied successfully",
+      data: {
+        requestId: result.request.id,
+        adjustedApprovedAmount: Number(result.request.approvedAmount),
+        previousApprovedAmount: result.previousApproved,
+        delta: result.delta,
+        walletTransactionId: result.transaction.id,
+        newWalletBalance: result.newBalance,
+        reviewedAt: result.request.reviewedAt,
+      },
+    });
+  } catch (error: any) {
+    console.error("Error adjusting topup:", error);
+    return res.status(400).json({ success: false, message: error.message || "Adjustment failed" });
   }
 };

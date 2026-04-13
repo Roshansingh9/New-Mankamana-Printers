@@ -1,5 +1,7 @@
 import prisma from "../../connect";
 import { ApiError } from "../../utils/api-error";
+import { withCache } from "../../utils/cache";
+import { invalidateCatalogPricingForVariant } from "./catalog-cache.service";
 import {
   getVariantPricingCombination,
   normalizeSelectedOptions,
@@ -63,150 +65,158 @@ const mapCatalogPricingRow = (pricingRow: PricingRowLike) => {
 
 // listActiveProductsService: Fetches the active product catalog for authenticated users
 export const listActiveProductsService = async () => {
-  const products = await prisma.product.findMany({
-    where: { is_active: true },
-    select: {
-      id: true,
-      product_code: true,
-      name: true,
-      description: true,
-      image_url: true,
-      production_days: true,
-    },
-    orderBy: { created_at: "asc" },
-  });
+  return withCache("catalog:active-products", 60_000, async () => {
+    const products = await prisma.product.findMany({
+      where: { is_active: true },
+      select: {
+        id: true,
+        product_code: true,
+        name: true,
+        description: true,
+        image_url: true,
+        production_days: true,
+      },
+      orderBy: { created_at: "asc" },
+    });
 
-  return products.map((product) => ({
-    ...product,
-    production_days: Number(product.production_days),
-  }));
+    return products.map((product) => ({
+      ...product,
+      production_days: Number(product.production_days),
+    }));
+  });
 };
 
 // getActiveProductByIdService: Returns a single active product by id
 export const getActiveProductByIdService = async (productId: string) => {
-  const product = await prisma.product.findFirst({
-    where: { id: productId, is_active: true },
-    select: {
-      id: true,
-      product_code: true,
-      name: true,
-      description: true,
-      image_url: true,
-      preview_images: true,
-      production_days: true,
-    },
+  return withCache(`catalog:product:${productId}`, 60_000, async () => {
+    const product = await prisma.product.findFirst({
+      where: { id: productId, is_active: true },
+      select: {
+        id: true,
+        product_code: true,
+        name: true,
+        description: true,
+        image_url: true,
+        preview_images: true,
+        production_days: true,
+      },
+    });
+    if (!product) throw new ApiError("Product not found.", 404, "PRODUCT_NOT_FOUND");
+    return { ...product, production_days: Number(product.production_days) };
   });
-  if (!product) throw new ApiError("Product not found.", 404, "PRODUCT_NOT_FOUND");
-  return { ...product, production_days: Number(product.production_days) };
 };
 
 // listActiveVariantsByProductService: Returns active variants for a specific active product
 export const listActiveVariantsByProductService = async (productId: string) => {
-  const product = await prisma.product.findFirst({
-    where: {
-      id: productId,
-      is_active: true,
-    },
-    select: {
-      id: true,
-      product_code: true,
-    },
+  return withCache(`catalog:variants:${productId}`, 60_000, async () => {
+    const product = await prisma.product.findFirst({
+      where: {
+        id: productId,
+        is_active: true,
+      },
+      select: {
+        id: true,
+        product_code: true,
+      },
+    });
+
+    if (!product) {
+      throw new ApiError("Product not found.", 404, "PRODUCT_NOT_FOUND");
+    }
+
+    const variants = await prisma.productVariant.findMany({
+      where: {
+        product_id: productId,
+        is_active: true,
+      },
+      select: {
+        id: true,
+        variant_code: true,
+        variant_name: true,
+        min_quantity: true,
+      },
+      orderBy: { created_at: "asc" },
+    });
+
+    return {
+      product_id: product.id,
+      product_code: product.product_code,
+      data: variants.map((variant) => ({
+        ...variant,
+        min_quantity: Number(variant.min_quantity),
+      })),
+    };
   });
-
-  if (!product) {
-    throw new ApiError("Product not found.", 404, "PRODUCT_NOT_FOUND");
-  }
-
-  const variants = await prisma.productVariant.findMany({
-    where: {
-      product_id: productId,
-      is_active: true,
-    },
-    select: {
-      id: true,
-      variant_code: true,
-      variant_name: true,
-      min_quantity: true,
-    },
-    orderBy: { created_at: "asc" },
-  });
-
-  return {
-    product_id: product.id,
-    product_code: product.product_code,
-    data: variants.map((variant) => ({
-      ...variant,
-      min_quantity: Number(variant.min_quantity),
-    })),
-  };
 };
 
 // listVariantOptionsService: Builds the option group tree for an active product variant
 export const listVariantOptionsService = async (variantId: string) => {
-  const variant = await prisma.productVariant.findFirst({
-    where: {
-      id: variantId,
-      is_active: true,
-    },
-    select: {
-      id: true,
-      variant_code: true,
-      min_quantity: true,
-    },
-  });
+  return withCache(`catalog:variant-options:${variantId}`, 60_000, async () => {
+    const variant = await prisma.productVariant.findFirst({
+      where: {
+        id: variantId,
+        is_active: true,
+      },
+      select: {
+        id: true,
+        variant_code: true,
+        min_quantity: true,
+      },
+    });
 
-  if (!variant) {
-    throw new ApiError("Variant not found.", 404, "VARIANT_NOT_FOUND");
-  }
+    if (!variant) {
+      throw new ApiError("Variant not found.", 404, "VARIANT_NOT_FOUND");
+    }
 
-  const optionGroups = await prisma.optionGroup.findMany({
-    where: {
-      variant_id: variantId,
-    },
-    select: {
-      id: true,
-      name: true,
-      label: true,
-      display_order: true,
-      is_required: true,
-      values: {
-        where: {
-          is_active: true,
-        },
-        select: {
-          id: true,
-          code: true,
-          label: true,
-          display_order: true,
-        },
-        orderBy: {
-          display_order: "asc",
+    const optionGroups = await prisma.optionGroup.findMany({
+      where: {
+        variant_id: variantId,
+      },
+      select: {
+        id: true,
+        name: true,
+        label: true,
+        display_order: true,
+        is_required: true,
+        values: {
+          where: {
+            is_active: true,
+          },
+          select: {
+            id: true,
+            code: true,
+            label: true,
+            display_order: true,
+          },
+          orderBy: {
+            display_order: "asc",
+          },
         },
       },
-    },
-    orderBy: {
-      display_order: "asc",
-    },
-  });
+      orderBy: {
+        display_order: "asc",
+      },
+    });
 
-  return {
-    variant_id: variant.id,
-    variant_code: variant.variant_code,
-    min_quantity: Number(variant.min_quantity),
-    option_groups: optionGroups.map((group) => ({
-      id: group.id,
-      name: group.name,
-      label: group.label,
-      display_order: Number(group.display_order),
-      is_required: group.is_required,
-      values: group.values.map((value) => ({
-        id: value.id,
-        code: value.code,
-        label: value.label,
-        display_order: Number(value.display_order),
+    return {
+      variant_id: variant.id,
+      variant_code: variant.variant_code,
+      min_quantity: Number(variant.min_quantity),
+      option_groups: optionGroups.map((group) => ({
+        id: group.id,
+        name: group.name,
+        label: group.label,
+        display_order: Number(group.display_order),
+        is_required: group.is_required,
+        values: group.values.map((value) => ({
+          id: value.id,
+          code: value.code,
+          label: value.label,
+          display_order: Number(value.display_order),
+        })),
       })),
-    })),
-  };
+    };
+  });
 };
 
 // calculateCatalogPricingService: Resolves exact-match pricing for a variant option combination
@@ -215,122 +225,133 @@ export const calculateCatalogPricingService = async (input: {
   selected_options: Record<string, unknown>;
   quantity: number;
 }) => {
-  const variant = await prisma.productVariant.findFirst({
-    where: {
-      id: input.variant_id,
-      is_active: true,
-    },
-    select: {
-      id: true,
-      variant_code: true,
-      min_quantity: true,
-    },
-  });
-
-  if (!variant) {
-    throw new ApiError("Variant not found.", 404, "VARIANT_NOT_FOUND");
-  }
-
-  if (input.quantity < Number(variant.min_quantity)) {
-    throw new ApiError(
-      `Quantity must be at least ${variant.min_quantity} for this variant.`,
-      400,
-      "MIN_QUANTITY_NOT_MET"
-    );
-  }
-
   const normalizedSelectedOptions = normalizeSelectedOptions(input.selected_options);
+  const optionsKey = Object.entries(normalizedSelectedOptions)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${k}:${v}`)
+    .join("|");
 
-  const groups = await prisma.optionGroup.findMany({
-    where: {
-      variant_id: variant.id,
-    },
-    select: {
-      name: true,
-      label: true,
-      is_required: true,
-      values: {
-        where: {
-          is_active: true,
-        },
-        select: {
-          code: true,
-        },
-      },
-    },
-  });
+  return withCache(
+    `catalog:pricing:${input.variant_id}:${input.quantity}:${optionsKey}`,
+    15_000,
+    async () => {
+      const [variant, groups] = await Promise.all([
+        prisma.productVariant.findFirst({
+          where: {
+            id: input.variant_id,
+            is_active: true,
+          },
+          select: {
+            id: true,
+            variant_code: true,
+            min_quantity: true,
+          },
+        }),
+        prisma.optionGroup.findMany({
+          where: {
+            variant_id: input.variant_id,
+          },
+          select: {
+            name: true,
+            label: true,
+            is_required: true,
+            values: {
+              where: {
+                is_active: true,
+              },
+              select: {
+                code: true,
+              },
+            },
+          },
+        }),
+      ]);
 
-  const groupMap = new Map(groups.map((group) => [group.name, group]));
-  const unknownGroupNames = Object.keys(normalizedSelectedOptions).filter((groupName) => !groupMap.has(groupName));
+      if (!variant) {
+        throw new ApiError("Variant not found.", 404, "VARIANT_NOT_FOUND");
+      }
 
-  if (unknownGroupNames.length > 0) {
-    throw new ApiError(
-      `Unsupported option group(s): ${unknownGroupNames.join(", ")}.`,
-      422,
-      "INVALID_OPTION_GROUP"
-    );
-  }
+      if (input.quantity < Number(variant.min_quantity)) {
+        throw new ApiError(
+          `Quantity must be at least ${variant.min_quantity} for this variant.`,
+          400,
+          "MIN_QUANTITY_NOT_MET"
+        );
+      }
 
-  const missingRequiredGroups = groups
-    .filter((group) => group.is_required && normalizedSelectedOptions[group.name] === undefined)
-    .map((group) => group.name);
+      const groupMap = new Map(groups.map((group) => [group.name, group]));
+      const unknownGroupNames = Object.keys(normalizedSelectedOptions).filter((groupName) => !groupMap.has(groupName));
 
-  if (missingRequiredGroups.length > 0) {
-    throw new ApiError(
-      `Missing required option group(s): ${missingRequiredGroups.join(", ")}.`,
-      422,
-      "REQUIRED_OPTION_MISSING"
-    );
-  }
+      if (unknownGroupNames.length > 0) {
+        throw new ApiError(
+          `Unsupported option group(s): ${unknownGroupNames.join(", ")}.`,
+          422,
+          "INVALID_OPTION_GROUP"
+        );
+      }
 
-  for (const [groupName, selectedCode] of Object.entries(normalizedSelectedOptions)) {
-    const group = groupMap.get(groupName);
+      const missingRequiredGroups = groups
+        .filter((group) => group.is_required && normalizedSelectedOptions[group.name] === undefined)
+        .map((group) => group.name);
 
-    if (!group) {
-      continue;
+      if (missingRequiredGroups.length > 0) {
+        throw new ApiError(
+          `Missing required option group(s): ${missingRequiredGroups.join(", ")}.`,
+          422,
+          "REQUIRED_OPTION_MISSING"
+        );
+      }
+
+      for (const [groupName, selectedCode] of Object.entries(normalizedSelectedOptions)) {
+        const group = groupMap.get(groupName);
+
+        if (!group) {
+          continue;
+        }
+
+        const isValidCode = group.values.some((value) => value.code === selectedCode);
+
+        if (!isValidCode) {
+          throw new ApiError(
+            `Invalid option value '${selectedCode}' supplied for group '${groupName}'.`,
+            422,
+            "INVALID_OPTION_VALUE"
+          );
+        }
+      }
+
+      const pricingRow = await getVariantPricingCombination(variant.id, normalizedSelectedOptions);
+
+      if (!pricingRow) {
+        throw new ApiError("This combination is currently unavailable.", 422, "PRICING_COMBINATION_NOT_FOUND");
+      }
+
+      const unitPrice = Number(pricingRow.price);
+      const discount = getFixedDiscountAmount(pricingRow);
+
+      if (discount > unitPrice) {
+        throw new ApiError(
+          "Configured discount exceeds unit price for this pricing row.",
+          500,
+          "INVALID_PRICING_CONFIGURATION"
+        );
+      }
+
+      const finalUnitPrice = Number((unitPrice - discount).toFixed(2));
+      const totalPrice = Number((finalUnitPrice * input.quantity).toFixed(2));
+
+      return {
+        variant_id: variant.id,
+        variant_code: variant.variant_code,
+        selected_options: normalizedSelectedOptions,
+        quantity: input.quantity,
+        unit_price: Number(unitPrice.toFixed(2)),
+        discount: Number(discount.toFixed(2)),
+        final_unit_price: finalUnitPrice,
+        total_price: totalPrice,
+      };
     }
-
-    const isValidCode = group.values.some((value) => value.code === selectedCode);
-
-    if (!isValidCode) {
-      throw new ApiError(
-        `Invalid option value '${selectedCode}' supplied for group '${groupName}'.`,
-        422,
-        "INVALID_OPTION_VALUE"
-      );
-    }
-  }
-
-  const pricingRow = await getVariantPricingCombination(variant.id, normalizedSelectedOptions);
-
-  if (!pricingRow) {
-    throw new ApiError("This combination is currently unavailable.", 422, "PRICING_COMBINATION_NOT_FOUND");
-  }
-
-  const unitPrice = Number(pricingRow.price);
-  const discount = getFixedDiscountAmount(pricingRow);
-
-  if (discount > unitPrice) {
-    throw new ApiError(
-      "Configured discount exceeds unit price for this pricing row.",
-      500,
-      "INVALID_PRICING_CONFIGURATION"
-    );
-  }
-
-  const finalUnitPrice = Number((unitPrice - discount).toFixed(2));
-  const totalPrice = Number((finalUnitPrice * input.quantity).toFixed(2));
-
-  return {
-    variant_id: variant.id,
-    variant_code: variant.variant_code,
-    selected_options: normalizedSelectedOptions,
-    quantity: input.quantity,
-    unit_price: Number(unitPrice.toFixed(2)),
-    discount: Number(discount.toFixed(2)),
-    final_unit_price: finalUnitPrice,
-    total_price: totalPrice,
-  };
+  );
 };
 
 // listAdminPricingByVariantService: Returns all pricing rows for a variant for admin review
@@ -401,6 +422,8 @@ export const updateAdminPricingService = async (
       discount_value: effectiveDiscount,
     },
   });
+
+  await invalidateCatalogPricingForVariant(updatedPricing.variant_id);
 
   return {
     variant_id: updatedPricing.variant_id,

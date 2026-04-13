@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { getAuthHeaders } from "@/store/authStore";
 import { notify } from "@/utils/notifications";
 import { formatCurrency } from "@/utils/helpers";
+import { fetchJsonCached } from "@/utils/requestCache";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
@@ -35,9 +36,13 @@ export default function TopUpPage() {
     useEffect(() => {
         const fetchDetails = async () => {
             try {
-                const res = await fetch(`${API_BASE}/wallet/payment-details`, { headers: getAuthHeaders() });
-                const data = await res.json();
-                if (res.ok && data.success) {
+                const data = await fetchJsonCached<any>(
+                    "wallet-payment-details",
+                    `${API_BASE}/wallet/payment-details`,
+                    { headers: getAuthHeaders() },
+                    60000
+                );
+                if (data.success) {
                     setPaymentDetails(Array.isArray(data.data) ? data.data : [data.data]);
                 }
             } finally {
@@ -51,6 +56,10 @@ export default function TopUpPage() {
         e.preventDefault();
         if (!amount || Number(amount) <= 0) {
             notify.error("Please enter a valid amount");
+            return;
+        }
+        if (Number(amount) > 100000) {
+            notify.error("Entered amount is unusually high. Please verify before submitting.");
             return;
         }
         if (!paymentMethod) {
@@ -109,8 +118,11 @@ export default function TopUpPage() {
                     No payment details configured. Please contact admin.
                 </div>
             ) : (
-                paymentDetails.map((pd) => (
-                    <div key={pd.id} className="bg-white rounded-2xl border border-[#e2e8f0] p-5 sm:p-6 mb-5">
+                paymentDetails.map((pd, index) => (
+                    <div
+                        key={pd.id || `${pd.bankName}-${pd.accountNumber}-${index}`}
+                        className="bg-white rounded-2xl border border-[#e2e8f0] p-5 sm:p-6 mb-5"
+                    >
                         <h2 className="font-bold text-[#0f172a] text-[0.95rem] mb-3">{pd.companyName}</h2>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[0.85rem]">
                             <div>
@@ -174,6 +186,11 @@ export default function TopUpPage() {
                     />
                     {amount && Number(amount) > 0 && (
                         <p className="text-[0.78rem] text-[#64748b] mt-1">{formatCurrency(amount)}</p>
+                    )}
+                    {Number(amount) > 20000 && (
+                        <p className="text-[0.78rem] text-amber-600 mt-1">
+                            High amount entered. Please double-check payment proof and amount.
+                        </p>
                     )}
                 </div>
 

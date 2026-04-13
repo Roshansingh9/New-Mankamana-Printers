@@ -3,8 +3,17 @@ import multer from "multer";
 import * as orderController from "../../controller/orders/product-order.controller";
 import { protect, restrictTo } from "../../middleware/auth.middleware";
 import { confirmWalletPayment } from "../../controller/wallet/wallet-transaction.controller";
+import rateLimit from "express-rate-limit";
+import { requireIdempotencyKey } from "../../middleware/idempotency.middleware";
 
 const router = Router();
+const criticalActionRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: "Too many order actions. Please wait a moment and retry." },
+});
 
 // Multer: accept payment proof image/pdf with 10MB limit
 const upload = multer({
@@ -25,6 +34,8 @@ router.post(
   "/",
   protect,
   restrictTo("CLIENT"),
+  criticalActionRateLimiter,
+  requireIdempotencyKey,
   upload.single("paymentProof"),
   orderController.createProductOrder
 );
@@ -42,11 +53,21 @@ router.get(
   restrictTo("CLIENT"),
   orderController.getOrderDetails
 );
+router.patch(
+  "/:orderId/cancel",
+  protect,
+  restrictTo("CLIENT"),
+  criticalActionRateLimiter,
+  requireIdempotencyKey,
+  orderController.cancelMyOrder
+);
 
 router.post(
   "/:orderId/confirm-wallet-payment",
   protect,
   restrictTo("CLIENT"),
+  criticalActionRateLimiter,
+  requireIdempotencyKey,
   confirmWalletPayment
 );
 

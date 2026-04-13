@@ -112,6 +112,9 @@ export const deductForOrderService = async (orderId: string, clientId: string) =
     if (!order) throw new Error("Order not found");
     if (order.user_id !== clientId) throw new Error("Order does not belong to you");
     if (order.payment_status === "PAID" || order.walletTransactionId) throw new Error("Order already paid");
+    if (String(order.status) !== "ORDER_PLACED") {
+      throw new Error("Wallet payment is only allowed while order is pending.");
+    }
     
     const orderAmount = Number(order.final_amount);
 

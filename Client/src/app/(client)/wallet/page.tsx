@@ -95,7 +95,7 @@ export default function WalletPage() {
             if (txnFilter !== "ALL") params.set("type", txnFilter);
             const res = await fetch(`${API_BASE}/wallet/transactions?${params}`, { headers: getAuthHeaders() });
             const data = await res.json();
-            if (res.ok && data.success) setTransactions(data.data?.transactions || data.data || []);
+            if (res.ok && data.success) setTransactions(data.data?.items || data.data?.transactions || data.data || []);
         } finally {
             setTxnLoading(false);
         }
@@ -108,7 +108,7 @@ export default function WalletPage() {
             if (topupFilter !== "ALL") params.set("status", topupFilter);
             const res = await fetch(`${API_BASE}/wallet/topup-requests?${params}`, { headers: getAuthHeaders() });
             const data = await res.json();
-            if (res.ok && data.success) setTopups(data.data?.requests || data.data || []);
+            if (res.ok && data.success) setTopups(data.data?.items || data.data?.requests || data.data || []);
         } finally {
             setTopupLoading(false);
         }

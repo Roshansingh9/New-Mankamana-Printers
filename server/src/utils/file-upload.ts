@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { supabase } from "./supabase";
+import { withRetry } from "./resilience";
 
 // MIME type → file extension mapping (extension from MIME, not from user-supplied filename)
 const MIME_TO_EXT: Record<string, string> = {
@@ -55,9 +56,13 @@ export const getSignedUrl = async (
   bucket: string,
   expiresIn = 3600
 ): Promise<string> => {
-  const { data, error } = await supabase.storage
-    .from(bucket)
-    .createSignedUrl(filePath, expiresIn);
+  const { data, error } = await withRetry(
+    () =>
+      supabase.storage
+        .from(bucket)
+        .createSignedUrl(filePath, expiresIn),
+    { retries: 2, timeoutMs: 8000, backoffMs: 250 }
+  );
 
   if (error || !data?.signedUrl) {
     throw new Error(`Failed to generate signed URL: ${error?.message}`);
@@ -80,12 +85,16 @@ export const uploadToSupabasePath = async (
   const fileExtension = MIME_TO_EXT[file.mimetype] ?? "bin";
   const filePath = `${folder}/${randomUUID()}.${fileExtension}`;
 
-  const { error } = await supabase.storage
-    .from(bucket)
-    .upload(filePath, file.buffer, {
-      contentType: file.mimetype,
-      upsert: false,
-    });
+  const { error } = await withRetry(
+    () =>
+      supabase.storage
+        .from(bucket)
+        .upload(filePath, file.buffer, {
+          contentType: file.mimetype,
+          upsert: false,
+        }),
+    { retries: 2, timeoutMs: 10000, backoffMs: 300 }
+  );
 
   if (error) {
     console.error("Supabase upload error:", error);
@@ -101,7 +110,10 @@ export const uploadToSupabasePath = async (
  */
 export const deleteFromSupabase = async (filePath: string, bucket?: string): Promise<void> => {
   const resolvedBucket = bucket ?? resolveBucket(filePath.split("/")[0]).bucket;
-  const { error } = await supabase.storage.from(resolvedBucket).remove([filePath]);
+  const { error } = await withRetry(
+    () => supabase.storage.from(resolvedBucket).remove([filePath]),
+    { retries: 1, timeoutMs: 8000, backoffMs: 200, fallback: async () => ({ data: null, error: null }) }
+  );
   if (error) {
     console.error("Supabase delete error:", error);
   }

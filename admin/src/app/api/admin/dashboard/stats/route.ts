@@ -18,10 +18,10 @@ export async function GET() {
 
   // Fetch data in parallel from available endpoints
   const [ordersRes, registrationsRes, designsRes, clientsRes] = await Promise.allSettled([
-    fetch(`${API_BASE_URL}/admin/orders`, { headers, cache: "no-store" }),
-    fetch(`${API_BASE_URL}/admin/registration-requests?status=PENDING`, { headers, cache: "no-store" }),
-    fetch(`${API_BASE_URL}/admin/design-submissions?status=PENDING_REVIEW`, { headers, cache: "no-store" }),
-    fetch(`${API_BASE_URL}/admin/clients`, { headers, cache: "no-store" }),
+    fetch(`${API_BASE_URL}/admin/orders`, { headers, next: { revalidate: 15 } }),
+    fetch(`${API_BASE_URL}/admin/registration-requests?status=PENDING`, { headers, next: { revalidate: 15 } }),
+    fetch(`${API_BASE_URL}/admin/design-submissions?status=PENDING_REVIEW`, { headers, next: { revalidate: 15 } }),
+    fetch(`${API_BASE_URL}/admin/clients`, { headers, next: { revalidate: 15 } }),
   ]);
 
   const parseJson = async (res: PromiseSettledResult<Response>) => {
@@ -52,6 +52,10 @@ export async function GET() {
       pending_registrations: registrationsData.length,
       pending_designs: designsData.length,
       total_clients: clientsData.length,
+    },
+  }, {
+    headers: {
+      "Cache-Control": "private, max-age=15",
     },
   });
 }

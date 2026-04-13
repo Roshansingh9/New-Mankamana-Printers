@@ -17,6 +17,7 @@ export const getPaymentDetails = async (req: Request, res: Response) => {
       qrImageUrl = getSupabasePublicUrl(qrImageUrl);
     }
 
+    res.setHeader("Cache-Control", "private, max-age=60");
     res.status(200).json({
       success: true,
       data: {

@@ -20,6 +20,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import {
+  adjustAdminTopupRequest,
   approveAdminTopupRequest,
   createAdminPaymentDetails,
   fetchAdminClientWalletSummary,
@@ -102,6 +103,8 @@ export default function PaymentsPage() {
   const [rejectReasonCode, setRejectReasonCode] = useState("");
   const [approveAmount, setApproveAmount] = useState("");
   const [approveNote, setApproveNote] = useState("");
+  const [adjustReason, setAdjustReason] = useState("");
+  const [decisionLoading, setDecisionLoading] = useState<"approve" | "reject" | "adjust" | null>(null);
 
   const [paymentForm, setPaymentForm] = useState({
     companyName: "",
@@ -180,6 +183,7 @@ export default function PaymentsPage() {
           response.data.submittedAmount.toString()
       );
       setApproveNote("");
+      setAdjustReason("");
     } catch (err) {
       toast({
         title: "Unable to load request",
@@ -204,6 +208,7 @@ export default function PaymentsPage() {
       return;
     }
 
+    setDecisionLoading("approve");
     try {
       await approveAdminTopupRequest({
         requestId: selectedTopup.requestId,
@@ -226,6 +231,8 @@ export default function PaymentsPage() {
         description: err instanceof Error ? err.message : "Try again.",
         variant: "destructive",
       });
+    } finally {
+      setDecisionLoading(null);
     }
   };
 
@@ -240,6 +247,7 @@ export default function PaymentsPage() {
       return;
     }
 
+    setDecisionLoading("reject");
     try {
       await rejectAdminTopupRequest({
         requestId: selectedTopup.requestId,
@@ -264,6 +272,64 @@ export default function PaymentsPage() {
         description: err instanceof Error ? err.message : "Try again.",
         variant: "destructive",
       });
+    } finally {
+      setDecisionLoading(null);
+    }
+  };
+
+  const handleAdjustApproved = async () => {
+    if (!selectedTopup || selectedTopup.status !== "APPROVED") return;
+    const amount = Number(approveAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast({
+        title: "Invalid amount",
+        description: "Enter a valid adjusted amount.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const submitted = Number(selectedTopup.submittedAmount);
+    if (amount !== submitted && !approveNote.trim()) {
+      toast({
+        title: "Approval note required",
+        description: "Add a note when approved amount differs from submitted amount.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!adjustReason.trim()) {
+      toast({
+        title: "Reason required",
+        description: "Provide a reason for this correction.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setDecisionLoading("adjust");
+    try {
+      await adjustAdminTopupRequest({
+        requestId: selectedTopup.requestId,
+        approvedAmount: amount,
+        reason: adjustReason.trim(),
+      });
+      toast({
+        title: "Top-up adjusted",
+        description: "Wallet balance and ledger updated.",
+        variant: "success",
+      });
+      await loadData();
+      const refreshed = await fetchAdminTopupRequestById(selectedTopup.requestId);
+      setSelectedTopup(refreshed.data);
+      setAdjustReason("");
+    } catch (err) {
+      toast({
+        title: "Adjustment failed",
+        description: err instanceof Error ? err.message : "Try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setDecisionLoading(null);
     }
   };
 
@@ -611,6 +677,11 @@ export default function PaymentsPage() {
                       </td>
                       <td className="px-5 py-4 font-semibold text-slate-900 dark:text-white">
                         {formatCurrency(request.submittedAmount)}
+                        {request.mismatchFlag ? (
+                          <div className="mt-1 text-[10px] font-semibold text-amber-600">
+                            Amount mismatch reviewed
+                          </div>
+                        ) : null}
                       </td>
                       <td className="px-5 py-4 text-slate-500">
                         {formatPaymentMethod(request.paymentMethod)}
@@ -631,6 +702,7 @@ export default function PaymentsPage() {
                         <Button
                           size="sm"
                           variant="outline"
+                          disabled={isDetailLoading}
                           onClick={() => void openDetail(request)}
                         >
                           Review
@@ -997,24 +1069,53 @@ export default function PaymentsPage() {
                     </div>
                   </div>
                 ) : null}
+                {selectedTopup.status === "APPROVED" ? (
+                  <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 text-sm dark:border-slate-800 dark:bg-slate-900">
+                    <div className="space-y-1.5">
+                      <Label>Adjust Approved Amount</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={approveAmount}
+                        onChange={(event) => setApproveAmount(event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Adjustment Reason</Label>
+                      <Input
+                        value={adjustReason}
+                        onChange={(event) => setAdjustReason(event.target.value)}
+                        placeholder="Correction after proof re-check"
+                      />
+                    </div>
+                    <Button
+                      variant="outline"
+                      onClick={handleAdjustApproved}
+                      disabled={decisionLoading !== null}
+                    >
+                      {decisionLoading === "adjust" ? "Applying..." : "Apply Adjustment"}
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : null}
           <DialogFooter className="gap-2 sm:justify-between">
-            <Button variant="outline" onClick={() => setIsDetailOpen(false)}>
+            <Button variant="outline" onClick={() => setIsDetailOpen(false)} disabled={decisionLoading !== null}>
               Close
             </Button>
             {selectedTopup?.status === "PENDING_REVIEW" ? (
               <div className="flex gap-2">
                 <Button
                   variant="destructive"
+                  disabled={decisionLoading !== null}
                   onClick={() => setIsRejectOpen(true)}
                 >
                   Reject
                 </Button>
-                <Button className="gap-2" onClick={handleApprove}>
+                <Button className="gap-2" onClick={handleApprove} disabled={decisionLoading !== null}>
                   <CheckCircle className="h-4 w-4" />
-                  Approve
+                  {decisionLoading === "approve" ? "Approving..." : "Approve"}
                 </Button>
               </div>
             ) : null}
@@ -1051,6 +1152,7 @@ export default function PaymentsPage() {
           <DialogFooter className="gap-2 sm:justify-end">
             <Button
               variant="outline"
+              disabled={decisionLoading !== null}
               onClick={() => {
                 setIsRejectOpen(false);
                 setRejectReason("");
@@ -1059,8 +1161,8 @@ export default function PaymentsPage() {
             >
               Cancel
             </Button>
-            <Button variant="destructive" onClick={handleReject}>
-              Reject Request
+            <Button variant="destructive" onClick={handleReject} disabled={decisionLoading !== null}>
+              {decisionLoading === "reject" ? "Rejecting..." : "Reject Request"}
             </Button>
           </DialogFooter>
         </DialogContent>

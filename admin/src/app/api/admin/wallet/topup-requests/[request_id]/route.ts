@@ -54,3 +54,34 @@ export async function GET(
 
   return toJsonResponse(apiResponse);
 }
+
+export async function PATCH(
+  request: Request,
+  context: { params: Promise<{ request_id: string }> }
+) {
+  const token = await getAuthToken();
+  if (!token) {
+    return NextResponse.json(
+      { message: "Not authenticated." },
+      { status: 401 }
+    );
+  }
+
+  const { request_id } = await context.params;
+  const body = await request.json().catch(() => ({}));
+
+  const apiResponse = await fetch(
+    `${API_BASE_URL}/admin/wallet/topup-requests/${request_id}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body ?? {}),
+      cache: "no-store",
+    }
+  );
+
+  return toJsonResponse(apiResponse);
+}

@@ -55,19 +55,19 @@ const STATUS_COLORS: Record<OrderStatus, string> = {
   ORDER_CANCELLED: "bg-red-100 text-red-700 border-red-200",
 };
 
-// Admin can manually advance from PROCESSING onwards; ORDER_PLACED auto-advances
+// Strict lifecycle actions: pending -> accepted -> completed (or pending -> cancelled)
 const NEXT_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {
   ORDER_PLACED: "ORDER_PROCESSING",
-  ORDER_PROCESSING: "ORDER_PREPARED",
-  ORDER_PREPARED: "ORDER_DISPATCHED",
+  ORDER_PROCESSING: "ORDER_DELIVERED",
+  ORDER_PREPARED: "ORDER_DELIVERED",
   ORDER_DISPATCHED: "ORDER_DELIVERED",
 };
 
 const NEXT_LABEL: Partial<Record<OrderStatus, string>> = {
   ORDER_PLACED: "Accept Order",
-  ORDER_PROCESSING: "Mark Prepared",
-  ORDER_PREPARED: "Mark Dispatched",
-  ORDER_DISPATCHED: "Mark Delivered",
+  ORDER_PROCESSING: "Mark Completed",
+  ORDER_PREPARED: "Mark Completed",
+  ORDER_DISPATCHED: "Mark Completed",
 };
 
 const STATUS_FLOW: OrderStatus[] = [
@@ -102,6 +102,7 @@ function OrderDetailModal({
 }) {
   const isCancelled = order.status === "ORDER_CANCELLED";
   const isDelivered = order.status === "ORDER_DELIVERED";
+  const isPending = order.status === "ORDER_PLACED";
   const isFinal = isCancelled || isDelivered;
   const currentIdx = STATUS_FLOW.indexOf(order.status);
   const nextStatus = NEXT_STATUS[order.status];
@@ -274,19 +275,21 @@ function OrderDetailModal({
         {/* Footer actions */}
         {!isFinal && (
           <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
-              onClick={() => onCancel(order)}
-            >
-              <XCircle className="h-3.5 w-3.5 mr-1.5" /> Cancel Order
-            </Button>
+            {isPending ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
+                onClick={() => onCancel(order)}
+              >
+                <XCircle className="h-3.5 w-3.5 mr-1.5" /> Cancel Order
+              </Button>
+            ) : null}
             <div className="flex-1" />
             {nextStatus && nextLabel && (
               <Button
                 size="sm"
-                disabled={advancing}
+                disabled={advancing || actionLoading}
                 onClick={() => onAdvance(order)}
                 className="bg-[#0061FF] text-white hover:bg-[#0052d9] px-5"
               >
@@ -631,6 +634,7 @@ export default function OrderManagementPage() {
                       filteredOrders.map((order) => {
                         const isCancelled = order.status === "ORDER_CANCELLED";
                         const isDelivered = order.status === "ORDER_DELIVERED";
+                        const isPending = order.status === "ORDER_PLACED";
                         const isFinal = isCancelled || isDelivered;
                         const nextStatus = NEXT_STATUS[order.status];
                         const nextLabel = NEXT_LABEL[order.status];
@@ -706,16 +710,17 @@ export default function OrderManagementPage() {
                                 {!isFinal && nextStatus && nextLabel && (
                                   <Button
                                     size="sm"
-                                    disabled={advancingId === order.id}
+                                    disabled={advancingId === order.id || actionLoading}
                                     onClick={(e) => { e.stopPropagation(); handleAdvanceStatus(order); }}
                                     className="h-7 px-2.5 text-xs bg-[#0061FF] text-white hover:bg-[#0052d9]"
                                   >
                                     {advancingId === order.id ? "…" : nextLabel}
                                   </Button>
                                 )}
-                                {!isFinal && (
+                                {isPending && (
                                   <Button
                                     size="sm" variant="ghost"
+                                    disabled={actionLoading}
                                     className="h-7 w-7 p-0 text-red-400 hover:bg-red-50 hover:text-red-600"
                                     onClick={(e) => { e.stopPropagation(); setCancelTarget(order); }}
                                     title="Cancel order" aria-label="Cancel order"

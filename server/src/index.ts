@@ -16,6 +16,10 @@ import { sweepStalePlacedOrders } from "./services/orders/product-order.service"
 import clientWalletRoutes from "./routes/wallet/client-wallet.routes";
 import adminWalletRoutes from "./routes/wallet/admin-wallet.routes";
 import { globalErrorHandler } from "./middleware/error.middleware";
+import { performanceMiddleware } from "./middleware/performance.middleware";
+import { assertRegionConsistency } from "./utils/region-check";
+import { assertValidEnv } from "./utils/env";
+import { requestContextMiddleware } from "./middleware/request-context.middleware";
 import swaggerUi from "swagger-ui-express";
 let swaggerOutput: object | null = null;
 if (process.env.VERCEL !== "1") {
@@ -28,6 +32,8 @@ if (process.env.VERCEL !== "1") {
 
 const app = express();
 const port = process.env.PORT || 8005;
+assertValidEnv();
+assertRegionConsistency();
 
 // ── Security headers
 app.use(helmet());
@@ -65,6 +71,14 @@ const authRateLimiter = rateLimit({
 });
 
 app.use(express.json());
+app.use(requestContextMiddleware);
+app.use(performanceMiddleware);
+app.use((_req, res, next) => {
+  if (process.env.BACKEND_REGION) {
+    res.setHeader("x-backend-region", process.env.BACKEND_REGION);
+  }
+  next();
+});
 
 app.use("/api/v1", publicRoutes);
 app.use("/api/v1/uploads", require("./routes/upload.routes").default);
@@ -97,6 +111,17 @@ app.get("/api/v1/admin/sweep", (req: Request, res: Response) => {
   sweepStalePlacedOrders()
     .then(() => res.json({ ok: true }))
     .catch((err) => res.status(500).json({ error: err.message }));
+});
+
+app.use((req: Request, res: Response) => {
+  return res.status(404).json({
+    success: false,
+    error: {
+      code: "NOT_FOUND",
+      message: `Route not found: ${req.method} ${req.originalUrl}`,
+      requestId: (req as any).requestId,
+    },
+  });
 });
 
 app.use(globalErrorHandler);

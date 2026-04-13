@@ -10,8 +10,10 @@ export interface WalletTopupListItemApi {
   requestId: string;
   client: WalletTopupClient | null;
   submittedAmount: number;
+  approvedAmount?: number | null;
   paymentMethod: string;
   status: WalletTopupStatus;
+  mismatchFlag?: boolean;
   submittedAt: string;
 }
 
@@ -215,6 +217,42 @@ export const rejectAdminTopupRequest = async (params: {
     success: boolean;
     message: string;
     data?: { requestId: string; status: string; reason: string; reviewedAt: string };
+  };
+};
+
+export const adjustAdminTopupRequest = async (params: {
+  requestId: string;
+  approvedAmount: number;
+  reason: string;
+}) => {
+  const response = await fetch(`/api/admin/wallet/topup-requests/${params.requestId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      approvedAmount: params.approvedAmount,
+      reason: params.reason,
+    }),
+  });
+
+  const data = await safeJson(response);
+  if (!response.ok) {
+    throw new Error(data?.message || "Failed to adjust top-up request.");
+  }
+
+  return data as {
+    success: boolean;
+    message: string;
+    data?: {
+      requestId: string;
+      adjustedApprovedAmount: number;
+      previousApprovedAmount: number;
+      delta: number;
+      walletTransactionId: string;
+      newWalletBalance: number;
+      reviewedAt: string;
+    };
   };
 };
 

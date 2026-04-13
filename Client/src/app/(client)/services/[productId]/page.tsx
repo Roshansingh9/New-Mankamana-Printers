@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback, use } from "react";
+import { useState, useEffect, use, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { useAuthStore, getAuthHeaders } from "@/store/authStore";
 import { notify } from "@/utils/notifications";
+import { fetchJsonCached } from "@/utils/requestCache";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
@@ -93,7 +94,7 @@ export default function ProductOrderPage({ params }: { params: Promise<{ product
     const [selectedVariantId, setSelectedVariantId] = useState("");
     const [optionGroups, setOptionGroups] = useState<OptionGroup[]>([]);
     const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
-    const [quantity, setQuantity] = useState(1);
+    const [quantity, setQuantity] = useState("");
     const [minQty, setMinQty] = useState(1);
     const [designCode, setDesignCode] = useState("");
     const [approvedDesigns, setApprovedDesigns] = useState<{ designCode: string; title: string | null; approvedFileUrl: string | null }[]>([]);
@@ -108,18 +109,27 @@ export default function ProductOrderPage({ params }: { params: Promise<{ product
     const [loadingProduct, setLoadingProduct] = useState(true);
     const [loadingVariants, setLoadingVariants] = useState(false);
     const [loadingOptions, setLoadingOptions] = useState(false);
+    const pricingAbortRef = useRef<AbortController | null>(null);
 
     // Fetch product details
     useEffect(() => {
         setLoadingProduct(true);
-        fetch(`${API_BASE}/products/${productId}`, { headers: getAuthHeaders() })
-            .then((r) => r.json())
+        fetchJsonCached<any>(
+            `catalog-product-${productId}`,
+            `${API_BASE}/products/${productId}`,
+            { headers: getAuthHeaders() },
+            60000
+        )
             .then((d) => { if (d.success || d.data) setProduct(d.data || d); else notify.error("Product not found"); })
             .catch(() => notify.error("Failed to load product"))
             .finally(() => setLoadingProduct(false));
 
-        fetch(`${API_BASE}/products/${productId}/variants`, { headers: getAuthHeaders() })
-            .then((r) => r.json())
+        fetchJsonCached<any>(
+            `catalog-variants-${productId}`,
+            `${API_BASE}/products/${productId}/variants`,
+            { headers: getAuthHeaders() },
+            60000
+        )
             .then((d) => { if (d.success) setVariants(d.data || []); })
             .catch(() => {});
     }, [productId]);
@@ -130,8 +140,12 @@ export default function ProductOrderPage({ params }: { params: Promise<{ product
     useEffect(() => {
         if (!product) return;
         const url = `${API_BASE}/designs/my?productId=${encodeURIComponent(productId)}&productName=${encodeURIComponent(product.name)}`;
-        fetch(url, { headers: getAuthHeaders() })
-            .then((r) => r.json())
+        fetchJsonCached<any>(
+            `approved-designs-${productId}`,
+            url,
+            { headers: getAuthHeaders() },
+            20000
+        )
             .then((d) => { if (d.success) setApprovedDesigns(d.data || []); })
             .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -139,18 +153,20 @@ export default function ProductOrderPage({ params }: { params: Promise<{ product
 
     // Fetch options when variant changes
     useEffect(() => {
-        if (!selectedVariantId) { setOptionGroups([]); setSelectedOptions({}); return; }
+        if (!selectedVariantId) { setOptionGroups([]); setSelectedOptions({}); setQuantity(""); return; }
         setLoadingOptions(true);
-        fetch(`${API_BASE}/variants/${selectedVariantId}/options`, { headers: getAuthHeaders() })
-            .then((r) => r.json())
+        fetchJsonCached<any>(
+            `variant-options-${selectedVariantId}`,
+            `${API_BASE}/variants/${selectedVariantId}/options`,
+            { headers: getAuthHeaders() },
+            60000
+        )
             .then((d) => {
                 if (d.success) {
                     setOptionGroups(d.option_groups);
                     setMinQty(d.min_quantity);
-                    setQuantity(d.min_quantity);
-                    const defaults: Record<string, string> = {};
-                    d.option_groups.forEach((g: OptionGroup) => { if (g.values.length > 0) defaults[g.name] = g.values[0].code; });
-                    setSelectedOptions(defaults);
+                    setQuantity("");
+                    setSelectedOptions({});
                 }
             })
             .catch(() => notify.error("Failed to load options"))
@@ -158,36 +174,63 @@ export default function ProductOrderPage({ params }: { params: Promise<{ product
         setPricing(null);
     }, [selectedVariantId]);
 
-    // Calculate price
-    const calculatePrice = useCallback(async () => {
-        const configurableGroups = optionGroups.filter(g => g.name.toLowerCase() !== "quantity");
-        if (!selectedVariantId || configurableGroups.some(g => g.is_required && !selectedOptions[g.name])) return;
-        setPricingLoading(true);
-        try {
-            const res = await fetch(`${API_BASE}/pricing/calculate`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-                body: JSON.stringify({ variant_id: selectedVariantId, selected_options: selectedOptions, quantity }),
-            });
-            const data = await res.json();
-            if (data.success) setPricing(data.data);
-            else if (res.status === 422) { setPricing(null); notify.error("This option combination is not available."); }
-            else notify.error(data.error?.message || "Pricing error");
-        } catch { notify.error("Failed to calculate price"); }
-        finally { setPricingLoading(false); }
-    }, [selectedVariantId, selectedOptions, quantity, optionGroups]);
+    const requiredGroups = optionGroups.filter(
+        (g) => g.name.toLowerCase() !== "quantity" && g.is_required
+    );
+    const quantityNumber = Number(quantity);
+    const isQuantityValid = Number.isFinite(quantityNumber) && quantityNumber >= minQty;
+    const isSelectionComplete = selectedVariantId !== "" &&
+        requiredGroups.every((g) => Boolean(selectedOptions[g.name])) &&
+        isQuantityValid;
 
     useEffect(() => {
-        if (selectedVariantId && Object.keys(selectedOptions).length > 0) calculatePrice();
-    }, [calculatePrice, selectedVariantId, selectedOptions, quantity]);
+        if (!isSelectionComplete) return;
+
+        pricingAbortRef.current?.abort();
+        const controller = new AbortController();
+        pricingAbortRef.current = controller;
+
+        const timer = setTimeout(async () => {
+            setPricingLoading(true);
+            try {
+                const res = await fetch(`${API_BASE}/pricing/calculate`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+                    body: JSON.stringify({
+                        variant_id: selectedVariantId,
+                        selected_options: selectedOptions,
+                        quantity: quantityNumber,
+                    }),
+                    signal: controller.signal,
+                });
+                const data = await res.json();
+                if (data.success) setPricing(data.data);
+                else if (res.status === 422) { setPricing(null); notify.error("This option combination is not available."); }
+                else notify.error(data.error?.message || "Pricing error");
+            } catch (err: any) {
+                if (err?.name !== "AbortError") notify.error("Failed to calculate price");
+            } finally {
+                setPricingLoading(false);
+            }
+        }, 250);
+
+        return () => {
+            clearTimeout(timer);
+            controller.abort();
+        };
+    }, [isSelectionComplete, selectedVariantId, selectedOptions, quantityNumber]);
 
     const handleProceedToPayment = async () => {
         if (!selectedVariantId) { notify.error("Please select a variant"); return; }
         if (!pricing) { notify.error("Please wait for pricing to load"); return; }
-        if (quantity < minQty) { notify.error(`Minimum quantity is ${minQty}`); return; }
+        if (!isQuantityValid) { notify.error(`Minimum quantity is ${minQty}`); return; }
         try {
-            const res = await fetch(`${API_BASE}/wallet/payment-details`, { headers: getAuthHeaders() });
-            const data = await res.json();
+            const data = await fetchJsonCached<any>(
+                "wallet-payment-details",
+                `${API_BASE}/wallet/payment-details`,
+                { headers: getAuthHeaders() },
+                60000
+            );
             if (data.success) setPaymentDetails(data.data);
             else notify.error("Could not load payment details");
         } catch { notify.error("Could not load payment details"); }
@@ -337,7 +380,7 @@ export default function ProductOrderPage({ params }: { params: Promise<{ product
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Variant</label>
                 <select
                     value={selectedVariantId}
-                    onChange={(e) => { setSelectedVariantId(e.target.value); setOptionGroups([]); setSelectedOptions({}); setPricing(null); }}
+                    onChange={(e) => { setSelectedVariantId(e.target.value); setOptionGroups([]); setSelectedOptions({}); setQuantity(""); setPricing(null); }}
                     aria-label="Select variant"
                     className="w-full px-3 py-2.5 rounded-lg border border-gray-300 text-sm text-gray-800 bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none"
                 >
@@ -362,11 +405,11 @@ export default function ProductOrderPage({ params }: { params: Promise<{ product
                                 id="qty"
                                 type="number"
                                 min={minQty}
-                                step={minQty}
+                                step={1}
                                 value={quantity}
                                 onChange={(e) => {
-                                    const raw = parseInt(e.target.value) || minQty;
-                                    setQuantity(Math.max(minQty, Math.round(raw / minQty) * minQty));
+                                    setQuantity(e.target.value);
+                                    setPricing(null);
                                 }}
                                 className="w-32 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-800 text-center focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none"
                             />
@@ -379,10 +422,14 @@ export default function ProductOrderPage({ params }: { params: Promise<{ product
                                 </label>
                                 <select
                                     value={selectedOptions[group.name] || ""}
-                                    onChange={(e) => setSelectedOptions(prev => ({ ...prev, [group.name]: e.target.value }))}
+                                    onChange={(e) => {
+                                        setSelectedOptions(prev => ({ ...prev, [group.name]: e.target.value }));
+                                        setPricing(null);
+                                    }}
                                     aria-label={group.label}
                                     className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-800 bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none"
                                 >
+                                    {group.is_required && <option value="">-- Select --</option>}
                                     {!group.is_required && <option value="">— None —</option>}
                                     {group.values.map(v => <option key={v.id} value={v.code}>{v.label}</option>)}
                                 </select>
@@ -475,7 +522,7 @@ export default function ProductOrderPage({ params }: { params: Promise<{ product
                             </div>
                         </div>
                     ) : (
-                        <p className="px-4 py-4 text-sm text-gray-400 text-center">Select all options to see price.</p>
+                        <p className="px-4 py-4 text-sm text-gray-400 text-center">Select all required fields to see price.</p>
                     )}
                 </div>
             )}

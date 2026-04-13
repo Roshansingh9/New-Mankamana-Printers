@@ -1,43 +1,57 @@
-import { Request, Response, NextFunction } from 'express';
-import { Prisma } from '@prisma/client';
+import { Request, Response, NextFunction } from "express";
+import { Prisma } from "@prisma/client";
 
-// globalErrorHandler: Catch-all middleware to handle all errors and return a consistent JSON response
 export const globalErrorHandler = (
   err: any,
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ) => {
-  // Prisma unique constraint violation → friendly 400
+  const requestId = (req as any).requestId;
+
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
-    if (err.code === 'P2002') {
-      const field = Array.isArray(err.meta?.target) ? (err.meta.target as string[]).join(', ') : 'field';
+    if (err.code === "P2002") {
+      const field = Array.isArray(err.meta?.target) ? (err.meta.target as string[]).join(", ") : "field";
       return res.status(400).json({
-        status: 'fail',
-        message: `This ${field} is already in use. Please use a different value.`,
+        success: false,
+        error: {
+          code: "UNIQUE_CONSTRAINT_VIOLATION",
+          message: `This ${field} is already in use. Please use a different value.`,
+          requestId,
+        },
       });
     }
-    // Record not found (e.g. update/delete on non-existent row)
-    if (err.code === 'P2025') {
+
+    if (err.code === "P2025") {
       return res.status(404).json({
-        status: 'fail',
-        message: 'Record not found.',
+        success: false,
+        error: {
+          code: "RECORD_NOT_FOUND",
+          message: "Record not found.",
+          requestId,
+        },
       });
     }
   }
 
-  err.statusCode = err.statusCode || 500;
-  err.status = err.status || 'error';
+  const statusCode = err.statusCode || 500;
+  const code = err.code || (statusCode === 500 ? "INTERNAL_SERVER_ERROR" : "REQUEST_ERROR");
+  const message = err.message || "Internal server error";
 
-  if (err.statusCode === 500) {
-    console.error('ERROR ', err);
+  if (statusCode >= 500) {
+    console.error(`ERROR requestId=${requestId}`, err);
   } else {
-    console.warn(`Error ${err.statusCode}: ${err.message}`);
+    console.warn(`WARN requestId=${requestId} status=${statusCode} message=${message}`);
   }
 
-  res.status(err.statusCode).json({
-    status: err.status,
-    message: err.message,
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+  return res.status(statusCode).json({
+    success: false,
+    error: {
+      code,
+      message,
+      requestId,
+      stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+    },
   });
 };
+

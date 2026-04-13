@@ -14,12 +14,26 @@ export async function GET() {
   if (!token) return NextResponse.json({ message: "Not authenticated." }, { status: 401 });
 
   try {
-    const res = await fetch(`${API_BASE_URL}/admin/analytics`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
+    const [visitorRes, perfRes] = await Promise.all([
+      fetch(`${API_BASE_URL}/admin/analytics`, {
+        headers: { Authorization: `Bearer ${token}` },
+        next: { revalidate: 20 },
+      }),
+      fetch(`${API_BASE_URL}/admin/performance`, {
+        headers: { Authorization: `Bearer ${token}` },
+        next: { revalidate: 20 },
+      }),
+    ]);
+    const visitorData = await visitorRes.json().catch(() => ({}));
+    const performanceData = await perfRes.json().catch(() => null);
+    const data = {
+      ...visitorData,
+      performance: performanceData?.data ?? null,
+    };
+    return NextResponse.json(data, {
+      status: visitorRes.status,
+      headers: { "Cache-Control": "private, max-age=20" },
     });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
   } catch {
     return NextResponse.json({ success: false, message: "Failed to fetch analytics" }, { status: 502 });
   }

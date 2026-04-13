@@ -1,5 +1,11 @@
 import { Request, Response } from "express";
 import prisma from "../../connect";
+import {
+  invalidateAllCatalogCaches,
+  invalidateCatalogCachesForProduct,
+  invalidateCatalogCachesForVariant,
+  invalidateCatalogPricingForVariant,
+} from "../../services/catalog/catalog-cache.service";
 
 // Mapping layer: AdminService <-> ProductCategory
 // Mapping layer: AdminProduct <-> Product + first ProductVariant
@@ -40,6 +46,7 @@ export const createService = async (req: Request, res: Response) => {
     const category = await prisma.productCategory.create({
       data: { name, slug: uniqueSlug, description: description ?? null, is_active: is_active ?? true },
     });
+    await invalidateAllCatalogCaches();
     res.status(201).json({
       success: true,
       data: { id: category.id, name: category.name, description: category.description, is_active: category.is_active },
@@ -130,6 +137,7 @@ export const createProductUnderService = async (req: Request, res: Response) => 
         variant_name: name,
       },
     });
+    await invalidateCatalogCachesForProduct(product.id);
 
     res.status(201).json({
       success: true,
@@ -215,6 +223,7 @@ export const updateProduct = async (req: Request, res: Response) => {
         ...(product_code !== undefined && { product_code }),
       },
     });
+    await invalidateCatalogCachesForProduct(product.id);
     res.json({
       success: true,
       data: {
@@ -259,6 +268,7 @@ export const createProductField = async (req: Request, res: Response) => {
         display_order: display_order ?? 0,
       },
     });
+    await invalidateCatalogCachesForVariant(variant.id, productId);
     res.status(201).json({
       success: true,
       data: {
@@ -293,6 +303,7 @@ export const updateField = async (req: Request, res: Response) => {
       },
       include: { values: { orderBy: { display_order: "asc" } } },
     });
+    await invalidateCatalogCachesForVariant(group.variant_id);
     res.json({
       success: true,
       data: {
@@ -333,6 +344,13 @@ export const createFieldOption = async (req: Request, res: Response) => {
         display_order: display_order ?? 0,
       },
     });
+    const group = await prisma.optionGroup.findUnique({
+      where: { id: fieldId },
+      select: { variant_id: true },
+    });
+    if (group?.variant_id) {
+      await invalidateCatalogCachesForVariant(group.variant_id);
+    }
     res.status(201).json({
       success: true,
       data: { id: optionValue.id, value: optionValue.code, label: optionValue.label, display_order: optionValue.display_order },
@@ -358,6 +376,13 @@ export const updateOption = async (req: Request, res: Response) => {
         ...(display_order !== undefined && { display_order }),
       },
     });
+    const group = await prisma.optionGroup.findUnique({
+      where: { id: optionValue.group_id },
+      select: { variant_id: true },
+    });
+    if (group?.variant_id) {
+      await invalidateCatalogCachesForVariant(group.variant_id);
+    }
     res.json({
       success: true,
       data: { id: optionValue.id, value: optionValue.code, label: optionValue.label, display_order: optionValue.display_order },
@@ -471,6 +496,7 @@ export const createProductPricing = async (req: Request, res: Response) => {
         discount_value: discount_value ?? 0,
       },
     });
+    await invalidateCatalogPricingForVariant(variant.id);
 
     res.status(201).json({
       success: true,
@@ -504,6 +530,7 @@ export const updatePricingRow = async (req: Request, res: Response) => {
         ...(discount_value !== undefined && { discount_value }),
       },
     });
+    await invalidateCatalogPricingForVariant(pricing.variant_id);
     res.json({
       success: true,
       data: {
@@ -521,10 +548,11 @@ export const updatePricingRow = async (req: Request, res: Response) => {
 export const removePricingDiscount = async (req: Request, res: Response) => {
   try {
     const pricingId = req.params.pricingId as string;
-    await prisma.variantPricing.update({
+    const pricing = await prisma.variantPricing.update({
       where: { id: pricingId },
       data: { discount_type: null, discount_value: 0 },
     });
+    await invalidateCatalogPricingForVariant(pricing.variant_id);
     res.json({ success: true, message: "Discount removed" });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });

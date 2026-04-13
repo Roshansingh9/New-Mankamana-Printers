@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import * as orderService from "../../services/orders/product-order.service";
 import { createProductOrderSchema, updateOrderStatusSchema, setDeliveryDateSchema } from "../../validators/order.validator";
 import { uploadToSupabase } from "../../utils/file-upload";
+import { withRequestDedupe } from "../../utils/request-dedupe";
 
 // createProductOrder: Handles the placement of a new order by a client, with optional payment proof upload
 export const createProductOrder = async (req: Request, res: Response) => {
@@ -106,14 +107,52 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: "Validation failed", errors: validated.error.issues });
     }
 
-    const order = await orderService.updateOrderStatusService(
-      orderId as string,
-      validated.data.status,
-      validated.data.expected_delivery_date
+    const result = await withRequestDedupe(
+      `admin:order-status:${(req as any).user.id}:${orderId}:${validated.data.status}`,
+      () =>
+        orderService.updateOrderStatusService(
+          orderId as string,
+          validated.data.status,
+          validated.data.expected_delivery_date,
+          "admin"
+        ),
+      8000
     );
-    res.status(200).json({ success: true, message: "Order status updated successfully", data: order });
+    res.status(200).json({
+      success: true,
+      message: result.noOp ? result.message : "Order status updated successfully",
+      data: result.order,
+      noOp: result.noOp,
+    });
   } catch (error: any) {
     res.status(400).json({ success: false, message: error.message || "Internal server error" });
+  }
+};
+
+export const cancelMyOrder = async (req: Request, res: Response) => {
+  try {
+    const { orderId } = req.params;
+    const userId = (req as any).user.id;
+
+    const order = await orderService.getOrderDetailsService(orderId as string);
+    if (!order || order.user_id !== userId) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+
+    const result = await withRequestDedupe(
+      `client:cancel-order:${userId}:${orderId}`,
+      () => orderService.updateOrderStatusService(orderId as string, "ORDER_CANCELLED", undefined, "client"),
+      8000
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: result.noOp ? result.message : "Order cancelled successfully",
+      data: result.order,
+      noOp: result.noOp,
+    });
+  } catch (error: any) {
+    return res.status(400).json({ success: false, message: error.message || "Cancellation failed" });
   }
 };
 

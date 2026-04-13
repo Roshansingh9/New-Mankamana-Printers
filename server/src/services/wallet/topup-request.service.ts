@@ -127,8 +127,12 @@ export const getAdminTopupsService = async (params: {
         ? { id: i.client.id, name: i.client.business_name, phone: i.client.phone_number }
         : null,
       submittedAmount: Number(i.submittedAmount),
+      approvedAmount: i.approvedAmount ? Number(i.approvedAmount) : null,
       paymentMethod: i.paymentMethod,
       status: i.status,
+      mismatchFlag:
+        i.approvedAmount !== null &&
+        Number(i.approvedAmount) !== Number(i.submittedAmount),
       submittedAt: i.createdAt,
     })),
     pagination: {
@@ -182,6 +186,13 @@ export const approveTopupService = async (
           ? "This top-up request has already been approved."
           : "This top-up request has already been reviewed."
       );
+    }
+    const submitted = Number(request.submittedAmount);
+    const mismatchRatio = submitted > 0 ? Math.abs(approvedAmount - submitted) / submitted : 0;
+    if ((approvedAmount !== submitted && !note?.trim()) || mismatchRatio >= 0.2) {
+      if (!note?.trim()) {
+        throw new Error("Approval note is required when approved amount differs from submitted amount.");
+      }
     }
 
     // 2. Get wallet and current balance
@@ -252,6 +263,89 @@ export const approveTopupService = async (
     }
     throw err;
   }
+};
+
+export const adjustApprovedTopupService = async (
+  requestId: string,
+  adminId: string,
+  adjustedAmount: number,
+  reason: string
+) => {
+  return prisma.$transaction(async (tx) => {
+    const request = await tx.walletTopupRequest.findUnique({ where: { id: requestId } });
+    if (!request) throw new Error("Top-up request not found");
+    if (request.status !== "APPROVED") {
+      throw new Error("Only approved top-up requests can be adjusted.");
+    }
+
+    const previousApproved = Number(request.approvedAmount || 0);
+    if (previousApproved === adjustedAmount) {
+      throw new Error("Adjusted amount is same as current approved amount.");
+    }
+
+    const wallet = await tx.walletAccount.findUnique({ where: { id: request.walletId } });
+    if (!wallet) throw new Error("Wallet not found");
+
+    const delta = Number((adjustedAmount - previousApproved).toFixed(2));
+    const balanceBefore = Number(wallet.availableBalance);
+    const balanceAfter = Number((balanceBefore + delta).toFixed(2));
+    if (balanceAfter < 0) {
+      throw new Error("Adjustment would make wallet balance negative.");
+    }
+
+    const type = delta >= 0 ? "CREDIT" : "DEBIT";
+    const amount = Math.abs(delta);
+
+    const txn = await tx.walletTransaction.create({
+      data: {
+        walletId: wallet.id,
+        clientId: request.clientId,
+        type,
+        source: "ADJUSTMENT",
+        sourceId: request.id,
+        amount,
+        currency: wallet.currency,
+        balanceBefore,
+        balanceAfter,
+        description: `Top-up adjustment by admin ${adminId}. Reason: ${reason}`,
+      },
+    });
+
+    await tx.walletAccount.update({
+      where: { id: wallet.id },
+      data: { availableBalance: balanceAfter },
+    });
+
+    const updatedRequest = await tx.walletTopupRequest.update({
+      where: { id: request.id },
+      data: {
+        approvedAmount: adjustedAmount,
+        reviewedById: adminId,
+        reviewedAt: new Date(),
+      },
+    });
+
+    await tx.notification.create({
+      data: {
+        recipientRole: "CLIENT",
+        recipientId: request.clientId,
+        clientId: request.clientId,
+        type: "wallet_topup_adjusted",
+        title: "Wallet top-up adjusted",
+        message: `An admin adjusted your approved top-up amount. Reason: ${reason}`,
+        referenceId: request.id,
+      },
+    });
+
+    return {
+      request: updatedRequest,
+      transaction: txn,
+      newBalance: balanceAfter,
+      previousApproved,
+      adjustedAmount,
+      delta,
+    };
+  });
 };
 
 // rejectTopupService: Logic to deny a top-up request, capture feedback, and alert the client

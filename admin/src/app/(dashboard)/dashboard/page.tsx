@@ -33,6 +33,7 @@ import {
   TrendingUp,
   CalendarDays,
 } from "lucide-react";
+import { cachedJsonFetch, invalidateCacheKey } from "@/lib/requestCache";
 
 type OrderStatus = "ORDER_PLACED" | "ORDER_PROCESSING" | "ORDER_PREPARED" | "ORDER_DISPATCHED" | "ORDER_DELIVERED" | "ORDER_CANCELLED";
 
@@ -79,13 +80,11 @@ export default function DashboardPage() {
   const [visitorStats, setVisitorStats] = useState<VisitorStats | null>(null);
 
   useEffect(() => {
-    fetch("/api/admin/dashboard/stats", { cache: "no-store" })
-      .then((r) => r.json())
+    cachedJsonFetch<any>("dashboard-stats", "/api/admin/dashboard/stats", 8000)
       .then((j) => { if (j.data) setStats(j.data); })
       .catch(() => {});
 
-    fetch("/api/admin/orders", { cache: "no-store" })
-      .then((r) => r.json())
+    cachedJsonFetch<any>("dashboard-orders", "/api/admin/orders", 8000)
       .then((j) => {
         const data: RecentOrder[] = Array.isArray(j) ? j : j.data ?? [];
         setRecentOrders(data.slice(0, 5));
@@ -93,8 +92,7 @@ export default function DashboardPage() {
       .catch(() => {});
 
     const loadVisitors = () => {
-      fetch("/api/admin/analytics", { cache: "no-store" })
-        .then((r) => r.json())
+      cachedJsonFetch<any>("dashboard-analytics", "/api/admin/analytics", 15000)
         .then((j) => { if (j.data) setVisitorStats(j.data); })
         .catch(() => {});
     };
@@ -119,8 +117,8 @@ export default function DashboardPage() {
     try {
       toast({ title: "Generating Report…", description: "Fetching order data." });
 
-      const res = await fetch("/api/admin/orders", { cache: "no-store" });
-      const json = await res.json();
+      invalidateCacheKey("dashboard-orders");
+      const json = await cachedJsonFetch<any>("dashboard-orders", "/api/admin/orders", 5000);
       const allOrders: RecentOrder[] = Array.isArray(json) ? json : json.data ?? [];
 
       // Filter to current month

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Bell, ChevronDown, Moon, Search, Sun } from "lucide-react";
 import { useTheme } from "@/components/shared/theme-provider";
+import { cachedJsonFetch, invalidateCacheKey } from "@/lib/requestCache";
 
 export function Header() {
   const { theme, setTheme } = useTheme();
@@ -11,9 +12,7 @@ export function Header() {
   useEffect(() => {
     const fetchPending = async () => {
       try {
-        const res = await fetch("/api/admin/dashboard/stats", { cache: "no-store" });
-        if (!res.ok) return;
-        const json = await res.json();
+        const json = await cachedJsonFetch<any>("dashboard-stats", "/api/admin/dashboard/stats", 8000);
         const d = json?.data;
         if (d) setPendingCount((d.pending_registrations || 0) + (d.pending_designs || 0));
       } catch {
@@ -24,14 +23,18 @@ export function Header() {
     const interval = setInterval(fetchPending, 15000);
 
     // Refresh immediately when an action resolves a notification
-    window.addEventListener("stats-updated", fetchPending);
+    const refreshNow = () => {
+      invalidateCacheKey("dashboard-stats");
+      void fetchPending();
+    };
+    window.addEventListener("stats-updated", refreshNow);
     // Refresh when the tab regains focus
     const onVisible = () => { if (!document.hidden) fetchPending(); };
     document.addEventListener("visibilitychange", onVisible);
 
     return () => {
       clearInterval(interval);
-      window.removeEventListener("stats-updated", fetchPending);
+      window.removeEventListener("stats-updated", refreshNow);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);

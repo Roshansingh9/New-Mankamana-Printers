@@ -3,51 +3,23 @@ import { getVariantPricingCombination, calculateOrderAmount, normalizeSelectedOp
 import { sendOrderPlaced, sendOrderStatusUpdate } from "../../utils/email";
 
 // ORDER_PLACED → ORDER_PROCESSING → ORDER_PREPARED → ORDER_DISPATCHED → ORDER_DELIVERED
-const ORDER_STATUS_FLOW: Record<string, string | null> = {
-  ORDER_PLACED: "ORDER_PROCESSING",
-  ORDER_PROCESSING: "ORDER_PREPARED",
-  ORDER_PREPARED: "ORDER_DISPATCHED",
-  ORDER_DISPATCHED: "ORDER_DELIVERED",
-  ORDER_DELIVERED: null,
+const FINAL_STATUSES = ["ORDER_DELIVERED", "ORDER_CANCELLED"];
+const CANCELLABLE_PENDING_STATES = new Set(["ORDER_PLACED"]);
+const ACCEPTABLE_STATES = new Set(["ORDER_PLACED"]);
+const COMPLETABLE_STATES = new Set(["ORDER_PROCESSING", "ORDER_PREPARED", "ORDER_DISPATCHED"]);
+
+const getLifecycleStatus = (status: string): "pending" | "accepted" | "cancelled" | "completed" => {
+  if (status === "ORDER_PLACED") return "pending";
+  if (status === "ORDER_CANCELLED") return "cancelled";
+  if (status === "ORDER_DELIVERED") return "completed";
+  return "accepted";
 };
 
-// How long after placement before the order is automatically moved to ORDER_PROCESSING (2 minutes)
-const AUTO_PROCESSING_DELAY_MS = 2 * 60 * 1000;
+// Lifecycle now requires explicit admin acceptance.
+const AUTO_PROCESSING_DELAY_MS = 0;
 
-// autoAdvanceToProcessing: Called by setTimeout or startup sweep to move an ORDER_PLACED order forward
-async function autoAdvanceToProcessing(orderId: string): Promise<void> {
-  try {
-    const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      select: {
-        status: true,
-        expected_delivery_date: true,
-        variant: { select: { variant_name: true, product: { select: { name: true } } } },
-        client: { select: { email: true, business_name: true } },
-      },
-    });
-    // Guard: only advance if still in ORDER_PLACED (admin may have cancelled it in the meantime)
-    if (!order || order.status !== "ORDER_PLACED") return;
-    await prisma.order.update({
-      where: { id: orderId },
-      data: { status: "ORDER_PROCESSING", updated_at: new Date() },
-    });
-    prisma.orderStatusHistory.create({
-      data: { order_id: orderId, status: "ORDER_PROCESSING", changed_by: "system" },
-    }).catch(() => {});
-    // Fire email notification (non-blocking)
-    sendOrderStatusUpdate({
-      to: order.client.email,
-      businessName: order.client.business_name,
-      orderId,
-      productName: order.variant.product.name,
-      variantName: order.variant.variant_name,
-      newStatus: "ORDER_PROCESSING",
-      expectedDeliveryDate: order.expected_delivery_date,
-    }).catch((err) => console.error(`[Email] Order processing notification failed for ${orderId}:`, err));
-  } catch (err) {
-    console.error(`[AutoTransition] Failed to advance order ${orderId} to ORDER_PROCESSING:`, err);
-  }
+async function autoAdvanceToProcessing(_orderId: string): Promise<void> {
+  return;
 }
 
 // sweepStalePlacedOrders: On server startup, advance any ORDER_PLACED orders older than the delay
@@ -189,7 +161,7 @@ export const createProductOrderService = async (data: {
   });
 
   // Schedule automatic transition ORDER_PLACED → ORDER_PROCESSING after the delay
-  setTimeout(() => autoAdvanceToProcessing(newOrder.id), AUTO_PROCESSING_DELAY_MS);
+  // setTimeout intentionally removed: lifecycle requires explicit admin acceptance.
 
   // Send order confirmation email (non-blocking)
   prisma.order.findUnique({
@@ -243,7 +215,7 @@ export const getOrderDetailsService = async (orderId: string) => {
 
 // getClientOrdersService: Lists all orders placed by a specific client
 export const getClientOrdersService = async (userId: string) => {
-  return await prisma.order.findMany({
+  const orders = await prisma.order.findMany({
     where: { user_id: userId },
     include: {
       approvedDesign: {
@@ -260,11 +232,17 @@ export const getClientOrdersService = async (userId: string) => {
     },
     orderBy: { created_at: "desc" },
   });
+
+  return orders.map((order) => ({
+    ...order,
+    lifecycle_status: getLifecycleStatus(String(order.status)),
+    can_client_cancel: CANCELLABLE_PENDING_STATES.has(String(order.status)),
+  }));
 };
 
 // getAllOrdersService: Provides an administrative overview of every order in the system
 export const getAllOrdersService = async () => {
-  return await prisma.order.findMany({
+  const orders = await prisma.order.findMany({
     include: {
       client: { select: { business_name: true, phone_number: true } },
       approvedDesign: {
@@ -281,82 +259,158 @@ export const getAllOrdersService = async () => {
     },
     orderBy: { created_at: "desc" },
   });
+
+  return orders.map((order) => ({
+    ...order,
+    lifecycle_status: getLifecycleStatus(String(order.status)),
+    allowed_admin_actions: {
+      accept: ACCEPTABLE_STATES.has(String(order.status)),
+      cancel: CANCELLABLE_PENDING_STATES.has(String(order.status)),
+      complete: COMPLETABLE_STATES.has(String(order.status)),
+    },
+  }));
 };
 
-// updateOrderStatusService: Logic to transition an order status; admin can cancel any active order
-export const updateOrderStatusService = async (orderId: string, status: string, expectedDeliveryDate?: string) => {
-  const order = await prisma.order.findUnique({
-    where: { id: orderId },
+const includeWithContext = {
+  client: { select: { email: true, business_name: true } },
+  variant: { select: { variant_name: true, product: { select: { name: true } } } },
+} as const;
+
+const refundOrderToWallet = async (
+  tx: any,
+  order: { id: string; user_id: string; payment_status: string; walletTransactionId: string | null; final_amount: any }
+) => {
+  if (order.payment_status !== "PAID" || !order.walletTransactionId) return;
+
+  const existingRefund = await tx.walletTransaction.findFirst({
+    where: { source: "REFUND", sourceId: order.id, clientId: order.user_id },
+    select: { id: true },
   });
+  if (existingRefund) return;
 
-  if (!order) {
-    throw new Error("Order not found");
-  }
+  const wallet = await tx.walletAccount.findUnique({ where: { clientId: order.user_id } });
+  if (!wallet) return;
 
-  const FINAL_STATUSES = ["ORDER_DELIVERED", "ORDER_CANCELLED"];
+  const refundAmount = Number(order.final_amount);
+  const balanceBefore = Number(wallet.availableBalance);
+  const balanceAfter = balanceBefore + refundAmount;
 
-  if (FINAL_STATUSES.includes(order.status as string)) {
-    throw new Error(`Cannot update a ${order.status.replace("ORDER_", "").toLowerCase()} order.`);
-  }
-
-  if (status === "ORDER_CANCELLED") {
-    const updated = await prisma.order.update({
-      where: { id: orderId },
-      data: { status: "ORDER_CANCELLED" as any, updated_at: new Date() },
-      include: {
-        client: { select: { email: true, business_name: true } },
-        variant: { select: { variant_name: true, product: { select: { name: true } } } },
-      },
-    });
-    // Record cancellation in history (non-blocking)
-    prisma.orderStatusHistory.create({
-      data: { order_id: orderId, status: "ORDER_CANCELLED", changed_by: "admin" },
-    }).catch(() => {});
-    sendOrderStatusUpdate({
-      to: updated.client.email,
-      businessName: updated.client.business_name,
-      orderId,
-      productName: updated.variant.product.name,
-      variantName: updated.variant.variant_name,
-      newStatus: "ORDER_CANCELLED",
-    }).catch((err) => console.error(`[Email] Order cancel notification failed for ${orderId}:`, err));
-    return updated;
-  }
-
-  const allowedNextStatus = ORDER_STATUS_FLOW[order.status];
-  if (allowedNextStatus !== status) {
-    throw new Error(
-      `Invalid status transition. Current status is ${order.status}. Allowed next status is ${allowedNextStatus ?? "none (order is complete)"}.`
-    );
-  }
-
-  const updateData: any = { status: status as any, updated_at: new Date() };
-  if (expectedDeliveryDate) {
-    updateData.expected_delivery_date = new Date(expectedDeliveryDate);
-  }
-
-  const updated = await prisma.order.update({
-    where: { id: orderId },
-    data: updateData,
-    include: {
-      client: { select: { email: true, business_name: true } },
-      variant: { select: { variant_name: true, product: { select: { name: true } } } },
+  await tx.walletTransaction.create({
+    data: {
+      walletId: wallet.id,
+      clientId: order.user_id,
+      type: "CREDIT",
+      source: "REFUND",
+      sourceId: order.id,
+      amount: refundAmount,
+      currency: wallet.currency,
+      balanceBefore,
+      balanceAfter,
+      description: `Refund for cancelled order ${order.id}`,
     },
   });
-  // Record forward transition in history (non-blocking)
-  prisma.orderStatusHistory.create({
-    data: { order_id: orderId, status, changed_by: "admin" },
-  }).catch(() => {});
+
+  await tx.walletAccount.update({
+    where: { id: wallet.id },
+    data: { availableBalance: balanceAfter },
+  });
+
+  await tx.order.update({
+    where: { id: order.id },
+    data: { payment_status: "REFUNDED" },
+  });
+};
+
+export const updateOrderStatusService = async (
+  orderId: string,
+  status: string,
+  expectedDeliveryDate?: string,
+  actor: "admin" | "client" = "admin"
+) => {
+  const changedBy = actor === "admin" ? "admin" : "client";
+
+  const result = await prisma.$transaction(async (tx) => {
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      include: includeWithContext,
+    });
+
+    if (!order) throw new Error("Order not found");
+
+    if (FINAL_STATUSES.includes(String(order.status))) {
+      if (String(order.status) === status) {
+        return { order, noOp: true, message: "Action already completed." };
+      }
+      throw new Error(`Cannot update a ${String(order.status).replace("ORDER_", "").toLowerCase()} order.`);
+    }
+
+    if (actor === "client" && status !== "ORDER_CANCELLED") {
+      throw new Error("Client can only cancel pending orders.");
+    }
+
+    if (status === "ORDER_CANCELLED") {
+      if (!CANCELLABLE_PENDING_STATES.has(String(order.status))) {
+        throw new Error("Cancel is allowed only if the order is pending.");
+      }
+      const cancelled = await tx.order.update({
+        where: { id: order.id },
+        data: { status: "ORDER_CANCELLED", updated_at: new Date() },
+        include: includeWithContext,
+      });
+      await tx.orderStatusHistory.create({
+        data: { order_id: order.id, status: "ORDER_CANCELLED", changed_by: changedBy },
+      });
+      await refundOrderToWallet(tx, order);
+      return { order: cancelled, noOp: false, message: "Order cancelled." };
+    }
+
+    if (status === "ORDER_PROCESSING") {
+      if (!ACCEPTABLE_STATES.has(String(order.status))) {
+        if (String(order.status) === "ORDER_PROCESSING") {
+          return { order, noOp: true, message: "Order already accepted." };
+        }
+        throw new Error("Accept is allowed only if order is pending.");
+      }
+    } else if (status === "ORDER_DELIVERED") {
+      if (!COMPLETABLE_STATES.has(String(order.status))) {
+        if (String(order.status) === "ORDER_DELIVERED") {
+          return { order, noOp: true, message: "Order already completed." };
+        }
+        throw new Error("Complete is allowed only for accepted orders.");
+      }
+    } else {
+      throw new Error("Unsupported status transition.");
+    }
+
+    const updateData: any = { status, updated_at: new Date() };
+    if (expectedDeliveryDate) {
+      updateData.expected_delivery_date = new Date(expectedDeliveryDate);
+    }
+
+    const updated = await tx.order.update({
+      where: { id: order.id },
+      data: updateData,
+      include: includeWithContext,
+    });
+
+    await tx.orderStatusHistory.create({
+      data: { order_id: order.id, status, changed_by: changedBy },
+    });
+
+    return { order: updated, noOp: false, message: "Order status updated." };
+  });
+
   sendOrderStatusUpdate({
-    to: updated.client.email,
-    businessName: updated.client.business_name,
+    to: result.order.client.email,
+    businessName: result.order.client.business_name,
     orderId,
-    productName: updated.variant.product.name,
-    variantName: updated.variant.variant_name,
-    newStatus: status,
-    expectedDeliveryDate: updated.expected_delivery_date,
+    productName: result.order.variant.product.name,
+    variantName: result.order.variant.variant_name,
+    newStatus: result.order.status,
+    expectedDeliveryDate: result.order.expected_delivery_date,
   }).catch((err) => console.error(`[Email] Order status notification failed for ${orderId}:`, err));
-  return updated;
+
+  return result;
 };
 
 // setOrderDeliveryDateService: Admin sets or updates the expected delivery date without changing status

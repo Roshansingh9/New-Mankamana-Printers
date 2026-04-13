@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { getClientTransactionsService, getAdminTransactionsService, deductForOrderService } from "../../services/wallet/wallet-transaction.service";
 import { transactionQuerySchema, adminTransactionQuerySchema, confirmWalletPaymentSchema } from "../../validators/wallet.validator";
+import { withRequestDedupe } from "../../utils/request-dedupe";
 
 // getWalletTransactions: Returns a history of all credits and debits for the current client
 export const getWalletTransactions = async (req: Request, res: Response) => {
@@ -62,7 +63,11 @@ export const confirmWalletPayment = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: "Validation failed", errors: validated.error.issues });
     }
 
-    const result = await deductForOrderService(orderId, clientId);
+    const result = await withRequestDedupe(
+      `client:wallet-pay:${clientId}:${orderId}`,
+      () => deductForOrderService(orderId, clientId),
+      8000
+    );
 
     res.status(200).json({
       success: true,

@@ -1,11 +1,18 @@
 import { PrismaClient, Prisma } from "@prisma/client";
 import { buildCombinationKey, normalizeSelectedOptions } from "./product-pricing.service";
+import {
+  invalidateCatalogCachesForProduct,
+  invalidateCatalogCachesForVariant,
+  invalidateCatalogPricingForVariant,
+} from "./catalog-cache.service";
 const prisma = new PrismaClient();
 
 // Product Management
 // createProductService: Logic to add a new base product to the catalog
 export const createProductService = async (data: any) => {
-  return await prisma.product.create({ data });
+  const product = await prisma.product.create({ data });
+  await invalidateCatalogCachesForProduct(product.id);
+  return product;
 };
 
 // getAllProductsService: Fetches all products including their nested variants
@@ -18,33 +25,45 @@ export const getAllProductsService = async () => {
 // Variant Management
 // createVariantService: Logic to persist a new style/version (variant) of a product
 export const createVariantService = async (productId: string, data: any) => {
-  return await prisma.productVariant.create({
+  const variant = await prisma.productVariant.create({
     data: {
       product_id: productId,
       ...data,
     },
   });
+  await invalidateCatalogCachesForProduct(productId);
+  return variant;
 };
 
 // Option Group & Value Management
 // createOptionGroupService: Groups related customization options for a variant
 export const createOptionGroupService = async (variantId: string, data: any) => {
-  return await prisma.optionGroup.create({
+  const group = await prisma.optionGroup.create({
     data: {
       variant_id: variantId,
       ...data,
     },
   });
+  await invalidateCatalogCachesForVariant(variantId);
+  return group;
 };
 
 // createOptionValueService: Logic to add specific values (e.g., 'A4', 'Glossy') to an option group
 export const createOptionValueService = async (groupId: string, data: any) => {
-  return await prisma.optionValue.create({
+  const optionValue = await prisma.optionValue.create({
     data: {
       group_id: groupId,
       ...data,
     },
   });
+  const group = await prisma.optionGroup.findUnique({
+    where: { id: groupId },
+    select: { variant_id: true },
+  });
+  if (group?.variant_id) {
+    await invalidateCatalogCachesForVariant(group.variant_id);
+  }
+  return optionValue;
 };
 
 // Pricing Combination Management
@@ -67,7 +86,7 @@ export const createVariantPricingService = async (variantId: string, data: any) 
     throw new Error("A pricing row already exists for this exact option combination.");
   }
 
-  return await prisma.variantPricing.create({
+  const pricing = await prisma.variantPricing.create({
     data: {
       variant_id: variantId,
       combination_key: combinationKey,
@@ -78,6 +97,8 @@ export const createVariantPricingService = async (variantId: string, data: any) 
       is_active: data.is_active ?? true,
     },
   });
+  await invalidateCatalogPricingForVariant(variantId);
+  return pricing;
 };
 
 // getVariantDetailsWithPricingInfo: Deep retrieval of a variant's full options and pricing matrix

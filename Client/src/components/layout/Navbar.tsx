@@ -21,12 +21,15 @@ export default function Navbar() {
         router.push("/");
     };
 
-    const navLinks = [
+    const baseNavLinks = [
         { href: "/", label: "Home" },
         { href: "/services", label: "Our Services" },
         { href: "/templates", label: "Free Designs" },
         { href: "/contact", label: "Contact" },
     ];
+    const navLinks = isAuthenticated
+        ? [...baseNavLinks.slice(0, 3), { href: "/wallet", label: "Wallet" }, ...baseNavLinks.slice(3)]
+        : baseNavLinks;
 
     return (
         <nav className="bg-white shadow-[0_1px_0_var(--border)] sticky top-0 z-[100]">
@@ -125,6 +128,13 @@ export default function Navbar() {
                             Order History
                         </Link>
                         <Link
+                            href="/wallet"
+                            className="py-2 px-2 font-semibold text-blue-600 rounded hover:bg-blue-50 transition-colors cursor-pointer"
+                            onClick={() => setIsProfileOpen(false)}
+                        >
+                            Wallet
+                        </Link>
+                        <Link
                             href="/templates?tab=mydesigns"
                             className="py-2 px-2 font-semibold text-blue-600 rounded hover:bg-blue-50 transition-colors cursor-pointer"
                             onClick={() => setIsProfileOpen(false)}
@@ -195,6 +205,15 @@ export default function Navbar() {
                             onClick={() => setMenuOpen(false)}
                         >
                             Join Us
+                        </Link>
+                    )}
+                    {isAuthenticated && (
+                        <Link
+                            href="/orders"
+                            onClick={() => setMenuOpen(false)}
+                            className="font-medium text-[0.875rem] py-1 text-[color:var(--text-dark)] transition-colors duration-200 no-underline border-b-2 border-transparent hover:text-[color:var(--primary)] hover:border-[color:var(--primary)]"
+                        >
+                            Order History
                         </Link>
                     )}
                 </div>

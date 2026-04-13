@@ -242,6 +242,7 @@ export default function OrdersPage() {
     const [statusFilter, setStatusFilter] = useState("ALL");
     const [search, setSearch] = useState("");
     const [selectedOrder, setSelectedOrder] = useState<ApiOrder | null>(null);
+    const [cancellingId, setCancellingId] = useState<string | null>(null);
 
     useEffect(() => {
         fetch(`${API_BASE}/orders`, {
@@ -265,6 +266,29 @@ export default function OrdersPage() {
             o.variant.variant_name.toLowerCase().includes(search.toLowerCase());
         return matchStatus && matchSearch;
     });
+
+    const handleCancelOrder = async (orderId: string) => {
+        setCancellingId(orderId);
+        try {
+            const response = await fetch(`${API_BASE}/orders/${orderId}/cancel`, {
+                method: "PATCH",
+                headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload.success) {
+                setError(payload.message || "Unable to cancel order");
+                return;
+            }
+            setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: "ORDER_CANCELLED" } : o)));
+            if (selectedOrder?.id === orderId) {
+                setSelectedOrder({ ...selectedOrder, status: "ORDER_CANCELLED" });
+            }
+        } catch {
+            setError("Network error. Please try again.");
+        } finally {
+            setCancellingId(null);
+        }
+    };
 
     return (
         <div className="min-h-screen bg-slate-50">
@@ -337,7 +361,7 @@ export default function OrdersPage() {
                 <div className="mb-5 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
                     <span className="text-amber-500 mt-0.5">ℹ</span>
                     <p className="text-xs text-amber-800">
-                        To cancel an order, contact <strong>New Mankamana Printers</strong> directly. Tap any order to view full details.
+                        You can cancel only pending orders. Once accepted by admin, cancellation is locked.
                     </p>
                 </div>
 
@@ -443,7 +467,22 @@ export default function OrdersPage() {
                                             </div>
 
                                             {/* Chevron */}
-                                            <span className="text-slate-300 text-lg flex-shrink-0 mt-1">›</span>
+                                            <div className="flex items-center gap-2">
+                                                {order.status === "ORDER_PLACED" && (
+                                                    <button
+                                                        type="button"
+                                                        disabled={cancellingId === order.id}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            void handleCancelOrder(order.id);
+                                                        }}
+                                                        className="text-[11px] font-semibold px-2.5 py-1 rounded-md border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-60"
+                                                    >
+                                                        {cancellingId === order.id ? "Cancelling..." : "Cancel"}
+                                                    </button>
+                                                )}
+                                                <span className="text-slate-300 text-lg flex-shrink-0 mt-1">›</span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

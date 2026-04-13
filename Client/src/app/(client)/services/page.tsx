@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { getAuthHeaders } from "@/store/authStore";
+import { fetchJsonCached } from "@/utils/requestCache";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
 
@@ -23,8 +24,12 @@ export default function ServicesPage() {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        fetch(`${API_BASE}/products`, { headers: getAuthHeaders() })
-            .then((r) => r.json())
+        fetchJsonCached<any>(
+            "catalog-products",
+            `${API_BASE}/products`,
+            { headers: getAuthHeaders() },
+            60000
+        )
             .then((d) => { if (d.success) setProducts(d.data || []); })
             .catch(() => {})
             .finally(() => setLoading(false));
