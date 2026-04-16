@@ -15,11 +15,14 @@ export const createProductOrderSchema = z.object({
   }).catchall(z.string().min(1)),
   notes: z.string().max(1000).optional(),
   designCode: z.string().max(50).optional(),
-}).strict();
+  useWallet: z.coerce.boolean().optional().default(false),
+});
 
 export const updateOrderStatusSchema = z.object({
   status: z.enum([
     "ORDER_PROCESSING",
+    "ORDER_PREPARED",
+    "ORDER_DISPATCHED",
     "ORDER_DELIVERED",
     "ORDER_CANCELLED",
   ]),

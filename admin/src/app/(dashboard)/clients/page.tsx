@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Search, Users, Phone, Mail, Building2, RefreshCw, KeyRound, MapPin, User, Eye, Ban, CheckCircle, FileText, Download, ExternalLink } from "lucide-react";
+import { Search, Users, Phone, Mail, Building2, RefreshCw, KeyRound, MapPin, User, Eye, Ban, CheckCircle, FileText, Download, ExternalLink, Pencil, Save, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface Client {
@@ -70,6 +70,11 @@ export default function ClientsPage() {
   const [clientDesigns, setClientDesigns] = useState<ClientDesign[]>([]);
   const [detailTab, setDetailTab] = useState<"info" | "orders" | "designs">("info");
   const [detailLoading, setDetailLoading] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editForm, setEditForm] = useState({
+    business_name: "", owner_name: "", email: "", phone_number: "", address: "",
+  });
 
   const handleResetPassword = async (client: Client) => {
     setResettingId(client.id);
@@ -120,8 +125,32 @@ export default function ClientsPage() {
 
   useEffect(() => { fetchClients(); }, []);
 
+  const handleUpdateClient = async () => {
+    if (!selectedClient) return;
+    setSavingEdit(true);
+    try {
+      const res = await fetch(`/api/admin/clients/${selectedClient.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editForm),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || "Failed to update client");
+      const updated: Client = json.data;
+      setSelectedClient(updated);
+      setClients((prev) => prev.map((c) => c.id === updated.id ? updated : c));
+      setIsEditing(false);
+      toast({ title: "Client Updated", description: "Profile saved and client notified by email." });
+    } catch (err: any) {
+      toast({ title: "Update Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   const openClientDetail = async (client: Client) => {
     setSelectedClient(client);
+    setIsEditing(false);
     setDetailTab("info");
     setDetailLoading(true);
     try {
@@ -386,22 +415,96 @@ export default function ClientsPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-                    {[
-                      { icon: User, label: "Owner", value: selectedClient.owner_name },
-                      { icon: Phone, label: "Phone", value: selectedClient.phone_number },
-                      { icon: Mail, label: "Email", value: selectedClient.email },
-                      ...(selectedClient.address ? [{ icon: MapPin, label: "Address", value: selectedClient.address }] : []),
-                      { icon: Building2, label: "Joined", value: selectedClient.createdAt ? new Date(selectedClient.createdAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "—" },
-                    ].map(({ icon: Icon, label, value }) => (
-                      <div key={label} className="flex items-start gap-3">
-                        <Icon className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-                        <div>
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
-                          <p className="text-sm font-medium text-slate-900 dark:text-white">{value}</p>
+
+                  {/* Edit / View toggle */}
+                  <div className="rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900 overflow-hidden">
+                    <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Profile Details</p>
+                      {!isEditing ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 gap-1.5 text-xs"
+                          onClick={() => {
+                            setEditForm({
+                              business_name: selectedClient.business_name,
+                              owner_name: selectedClient.owner_name,
+                              email: selectedClient.email,
+                              phone_number: selectedClient.phone_number,
+                              address: selectedClient.address ?? "",
+                            });
+                            setIsEditing(true);
+                          }}
+                        >
+                          <Pencil className="h-3 w-3" /> Edit
+                        </Button>
+                      ) : (
+                        <div className="flex gap-1.5">
+                          <Button type="button" variant="outline" size="sm" className="h-7 gap-1 text-xs" onClick={() => setIsEditing(false)}>
+                            <X className="h-3 w-3" /> Cancel
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-7 gap-1 text-xs bg-[#0061FF] hover:bg-[#0050d5]"
+                            disabled={savingEdit}
+                            onClick={handleUpdateClient}
+                          >
+                            <Save className="h-3 w-3" />
+                            {savingEdit ? "Saving…" : "Save"}
+                          </Button>
                         </div>
+                      )}
+                    </div>
+
+                    {isEditing ? (
+                      <div className="p-4 space-y-3">
+                        {([
+                          { key: "business_name", label: "Business Name", icon: Building2 },
+                          { key: "owner_name", label: "Owner Name", icon: User },
+                          { key: "email", label: "Email Address", icon: Mail },
+                          { key: "phone_number", label: "Phone Number", icon: Phone },
+                          { key: "address", label: "Address", icon: MapPin },
+                        ] as const).map(({ key, label, icon: Icon }) => (
+                          <div key={key}>
+                            <label htmlFor={`edit-${key}`} className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                              <Icon className="h-3 w-3" /> {label}
+                            </label>
+                            <input
+                              id={`edit-${key}`}
+                              type="text"
+                              value={editForm[key]}
+                              onChange={(e) => setEditForm((prev) => ({ ...prev, [key]: e.target.value }))}
+                              placeholder={label}
+                              title={label}
+                              className="w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-[#0061FF] focus:ring-1 focus:ring-[#0061FF] dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                            />
+                          </div>
+                        ))}
+                        <p className="text-xs text-amber-600 bg-amber-50 rounded px-2 py-1.5 border border-amber-100">
+                          The client will receive an email listing all changes made.
+                        </p>
                       </div>
-                    ))}
+                    ) : (
+                      <div className="p-4 space-y-3">
+                        {[
+                          { icon: User, label: "Owner", value: selectedClient.owner_name },
+                          { icon: Phone, label: "Phone", value: selectedClient.phone_number },
+                          { icon: Mail, label: "Email", value: selectedClient.email },
+                          ...(selectedClient.address ? [{ icon: MapPin, label: "Address", value: selectedClient.address }] : []),
+                          { icon: Building2, label: "Joined", value: selectedClient.createdAt ? new Date(selectedClient.createdAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "—" },
+                        ].map(({ icon: Icon, label, value }) => (
+                          <div key={label} className="flex items-start gap-3">
+                            <Icon className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                            <div>
+                              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
+                              <p className="text-sm font-medium text-slate-900 dark:text-white">{value}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

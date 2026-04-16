@@ -1,6 +1,7 @@
 import prisma from "../../connect";
 import { Decimal } from "@prisma/client/runtime/library";
-import { getOrCreateWalletService } from "./wallet-account.service";
+import { getOrCreateWalletService, invalidateBalanceCache } from "./wallet-account.service";
+import { sendTopupApproved } from "../../utils/email";
 
 // submitTopupService: Persists a client's top-up request and creates an administrative alert
 export const submitTopupService = async (data: {
@@ -256,6 +257,26 @@ export const approveTopupService = async (
       transaction: txn,
       newBalance,
     };
+  }).then(async (result) => {
+    // Bust the cached balance so the next /wallet/balance request returns the new value
+    void invalidateBalanceCache(result.request.clientId);
+
+    // Send approval email to client (non-blocking)
+    const client = await prisma.client.findUnique({
+      where: { id: result.request.clientId },
+      select: { email: true, business_name: true },
+    });
+    if (client) {
+      sendTopupApproved({
+        to: client.email,
+        businessName: client.business_name,
+        approvedAmount,
+        newBalance: result.newBalance,
+        requestId: result.request.id,
+      }).catch((err) => console.error("[Email] Failed to send topup approval email:", err));
+    }
+
+    return result;
   });
   } catch (err: any) {
     if (err?.code === "P2002") {

@@ -48,12 +48,14 @@ router.get("/clients", protect, restrictTo("ADMIN"), adminController.getClients)
 router.get("/clients/:id", protect, restrictTo("ADMIN"), adminController.getClientById);
 router.post("/clients/:id/reset-password", protect, restrictTo("ADMIN"), criticalActionRateLimiter, requireIdempotencyKey, adminController.resetClientPassword);
 router.patch("/clients/:id/toggle-status", protect, restrictTo("ADMIN"), criticalActionRateLimiter, requireIdempotencyKey, adminController.toggleClientStatus);
+router.patch("/clients/:id", protect, restrictTo("ADMIN"), criticalActionRateLimiter, adminController.updateClientProfile);
 router.get("/clients/:id/orders", protect, restrictTo("ADMIN"), adminController.getClientOrders);
 router.get("/clients/:id/designs", protect, restrictTo("ADMIN"), adminController.getClientDesigns);
 
 // DESIGN SUBMISSIONS: Review, approve, or reject custom designs submitted by clients
 router.get("/design-submissions", protect, restrictTo("ADMIN"), designSubmissionController.getAdminSubmissions);
 router.get("/design-submissions/:submissionId", protect, restrictTo("ADMIN"), designSubmissionController.getAdminSubmissionById);
+router.get("/design-submissions/:submissionId/file", protect, restrictTo("ADMIN"), designSubmissionController.getAdminSubmissionFile);
 router.post("/design-submissions/:submissionId/approve", protect, restrictTo("ADMIN"), criticalActionRateLimiter, requireIdempotencyKey, designSubmissionController.approveSubmission);
 router.patch("/design-submissions/:submissionId/reject", protect, restrictTo("ADMIN"), criticalActionRateLimiter, requireIdempotencyKey, designSubmissionController.rejectSubmission);
 
@@ -106,6 +108,7 @@ router.get("/orders", protect, restrictTo("ADMIN"), productOrderController.getAd
 router.patch("/orders/:orderId/status", protect, restrictTo("ADMIN"), criticalActionRateLimiter, requireIdempotencyKey, productOrderController.updateOrderStatus);
 router.patch("/orders/:orderId/delivery-date", protect, restrictTo("ADMIN"), criticalActionRateLimiter, requireIdempotencyKey, productOrderController.setOrderDeliveryDate);
 router.get("/orders/:orderId", protect, restrictTo("ADMIN"), productOrderController.getOrderDetails);
+router.get("/orders/:orderId/payment-proof", protect, restrictTo("ADMIN"), productOrderController.getOrderPaymentProof);
 
 // ANALYTICS: Visitor and page-view stats for admin dashboard
 router.get("/analytics", protect, restrictTo("ADMIN"), getVisitorStats);

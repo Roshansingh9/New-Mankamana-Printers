@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { protect, restrictTo } from "../../middleware/auth.middleware";
-import { createDesignSubmission, getMySubmissions, getMySubmissionById } from "../../controller/design/design-submission.controller";
+import { createDesignSubmission, getMySubmissions, getMySubmissionById, getMySubmissionFile } from "../../controller/design/design-submission.controller";
 
 const router = Router();
 
@@ -26,6 +26,7 @@ const upload = multer({
 router.post("/", protect, restrictTo("CLIENT"), upload.single("file"), createDesignSubmission);
 router.get("/my", protect, restrictTo("CLIENT"), getMySubmissions);
 router.get("/my/:submissionId", protect, restrictTo("CLIENT"), getMySubmissionById);
+router.get("/my/:submissionId/file", protect, restrictTo("CLIENT"), getMySubmissionFile);
 
 // Note: Admin routes will be configured separately or within this file
 export default router;

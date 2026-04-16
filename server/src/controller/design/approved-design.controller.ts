@@ -27,6 +27,7 @@ export const getMyDesigns = async (req: Request, res: Response) => {
         approvedAt: d.approvedAt,
         status: d.status,
         approvedFileUrl: d.approvedFileUrl || null,
+        extraPrice: Number(d.extraPrice ?? 0),
         categoryName: d.submission?.template?.category?.name || null,
         categorySlug: d.submission?.template?.category?.slug || null,
       })),

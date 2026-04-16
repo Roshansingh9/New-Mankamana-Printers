@@ -104,6 +104,7 @@ export const getVariantOptionsController = async (req: Request, res: Response) =
       variant_code: options.variant_code,
       min_quantity: options.min_quantity,
       option_groups: options.option_groups,
+      pricing_rows: options.pricing_rows,
     });
   } catch (error) {
     return sendErrorResponse(res, error, "Get variant options failed");

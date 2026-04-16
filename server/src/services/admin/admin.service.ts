@@ -2,7 +2,7 @@ import prisma from "../../connect";
 import { AppError } from "../../utils/apperror";
 import bcrypt from "bcrypt";
 import { randomBytes } from "crypto";
-import { sendClientCredentials, sendPasswordReset, sendClientDeactivated } from "../../utils/email";
+import { sendClientCredentials, sendPasswordReset, sendClientDeactivated, sendClientProfileUpdated } from "../../utils/email";
 
 // getRegistrationRequestsService: Logic to fetch registration requests with optional status and search filtering
 export const getRegistrationRequestsService = async (filters: { status?: string; search?: string } = {}) => {
@@ -239,6 +239,67 @@ export const getClientByIdService = async (id: string) => {
   });
   if (!data) throw new AppError("Client not found", 404);
   return { message: "Client fetched", data };
+};
+
+// updateClientProfileService: Allows admin to update mutable client fields; sends a diff email to the client
+export const updateClientProfileService = async (
+  clientId: string,
+  updates: Partial<{
+    business_name: string;
+    owner_name: string;
+    email: string;
+    phone_number: string;
+    address: string;
+  }>
+) => {
+  const client = await prisma.client.findUnique({ where: { id: clientId } });
+  if (!client) throw new AppError("Client not found", 404);
+
+  // Build the diff for the notification email
+  const FIELD_LABELS: Record<string, string> = {
+    business_name: "Business Name",
+    owner_name: "Owner Name",
+    email: "Email Address",
+    phone_number: "Phone Number",
+    address: "Address",
+  };
+
+  const changes: Array<{ field: string; oldValue: string; newValue: string }> = [];
+  const data: Record<string, string> = {};
+
+  for (const [key, newVal] of Object.entries(updates)) {
+    if (newVal === undefined || newVal === null) continue;
+    const trimmed = String(newVal).trim();
+    if (!trimmed) continue;
+    const oldVal = String((client as any)[key] ?? "").trim();
+    if (trimmed !== oldVal) {
+      changes.push({ field: FIELD_LABELS[key] ?? key, oldValue: oldVal || "—", newValue: trimmed });
+      data[key] = trimmed;
+    }
+  }
+
+  if (Object.keys(data).length === 0) {
+    return { message: "No changes detected.", data: client };
+  }
+
+  const updated = await prisma.client.update({
+    where: { id: clientId },
+    data,
+    select: {
+      id: true, client_code: true, phone_number: true, business_name: true,
+      owner_name: true, email: true, address: true, status: true, createdAt: true,
+    },
+  });
+
+  // Send notification email (non-blocking)
+  sendClientProfileUpdated({
+    to: updated.email,
+    ownerName: updated.owner_name,
+    businessName: updated.business_name,
+    changes,
+  }).catch((err) => console.error("[Email] Failed to send profile updated email:", err));
+
+  return { message: "Client profile updated successfully.", data: updated };
 };
 
 // resetClientPasswordService: Generates a new password for a client, updates the hash, and emails the new credentials

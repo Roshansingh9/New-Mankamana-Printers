@@ -46,41 +46,49 @@ const safeJson = async (response: Response) => {
   try { return JSON.parse(raw); } catch { return { message: raw }; }
 };
 
-const mapSubmission = (s: SubmissionApi): DesignListItem => ({
-  id: s.submissionId,
-  title: s.title || `Submission ${s.submissionId.slice(0, 6)}`,
-  client: s.client?.name || "Unknown Client",
-  designer: s.client?.name || "Client",
-  submittedDate: formatDate(s.submittedAt),
-  status: s.status === "PENDING_REVIEW" ? "Pending" : s.status === "APPROVED" ? "Approved" : "Rejected",
-  // image only used for non-PDF thumbnails; PDF cards show a document icon instead
-  image: s.fileType === "pdf" ? "" : (s.fileUrl || ""),
-  fileUrl: s.fileUrl || undefined,
-  fileType: s.fileType || undefined,
-  designCode: s.designCode ?? undefined,
-  productName: s.product?.name ?? undefined,
-});
+import { cachedJsonFetch, invalidateCacheKey } from "@/lib/requestCache";
+
+const mapSubmission = (s: SubmissionApi): DesignListItem => {
+  // fileUrl from the API is a raw Supabase private storage path, not a URL.
+  // Always use the proxy endpoint so the browser can actually load the file.
+  const proxyUrl = s.fileUrl ? `/api/admin/designs/submissions/${s.submissionId}/file` : undefined;
+  return {
+    id: s.submissionId,
+    title: s.title || `Submission ${s.submissionId.slice(0, 6)}`,
+    client: s.client?.name || "Unknown Client",
+    designer: s.client?.name || "Client",
+    submittedDate: formatDate(s.submittedAt),
+    status: s.status === "PENDING_REVIEW" ? "Pending" : s.status === "APPROVED" ? "Approved" : "Rejected",
+    // image only used for non-PDF thumbnails; PDF cards show a document icon instead
+    image: s.fileType === "pdf" ? "" : (proxyUrl || ""),
+    fileUrl: proxyUrl,
+    fileType: s.fileType || undefined,
+    designCode: s.designCode ?? undefined,
+    productName: s.product?.name ?? undefined,
+  };
+};
+
+const DESIGNS_CACHE_KEY = "admin-designs-submissions";
 
 // fetchAllDesignSubmissions: Loads ALL submissions (pending + approved + rejected) for the admin review page.
-// Using a single source avoids duplicate cards that occurred when merging submissions + approved-designs lists.
+// Cached for 15 s so the page loads instantly on revisit; invalidated after approve/reject.
 export const fetchAllDesignSubmissions = async (): Promise<DesignListItem[]> => {
-  const response = await fetch("/api/admin/designs/submissions?limit=200", {
-    method: "GET",
-    cache: "no-store",
-  });
-  const data = await safeJson(response);
-  if (!response.ok) throw new Error(data?.message || "Failed to load design submissions.");
-  return (data?.data?.items || []).map(mapSubmission);
+  const data = await cachedJsonFetch<any>(DESIGNS_CACHE_KEY, "/api/admin/designs/submissions?limit=200", 15_000);
+  if (!data?.data) throw new Error(data?.message || "Failed to load design submissions.");
+  return (data.data.items || []).map(mapSubmission);
 };
+
+export const invalidateDesignsCache = () => invalidateCacheKey(DESIGNS_CACHE_KEY);
 
 export const approveDesignSubmission = async (
   submissionId: string,
-  note?: string
+  note?: string,
+  extraPrice?: number
 ) => {
   const response = await fetch("/api/admin/designs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ submissionId, note }),
+    body: JSON.stringify({ submissionId, note, extraPrice }),
   });
 
   const data = await safeJson(response);
@@ -88,6 +96,7 @@ export const approveDesignSubmission = async (
     throw new Error(data?.message || "Failed to approve design.");
   }
 
+  invalidateDesignsCache();
   return data;
 };
 
@@ -109,5 +118,6 @@ export const rejectDesignSubmission = async (
     throw new Error(data?.message || "Failed to reject design.");
   }
 
+  invalidateDesignsCache();
   return data;
 };

@@ -1,13 +1,16 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { cachedJsonFetch, invalidateCacheKey } from "@/lib/requestCache";
+
+const ORDERS_CACHE_KEY = "admin-orders-list";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import {
   Search, Package, Clock, CheckCircle2, Printer, Truck,
   RefreshCw, Calendar, XCircle, ChevronRight, AlertTriangle,
-  Eye, FileText, X,
+  Eye, FileText, X, Wallet,
 } from "lucide-react";
 
 type OrderStatus =
@@ -55,19 +58,19 @@ const STATUS_COLORS: Record<OrderStatus, string> = {
   ORDER_CANCELLED: "bg-red-100 text-red-700 border-red-200",
 };
 
-// Strict lifecycle actions: pending -> accepted -> completed (or pending -> cancelled)
+// Strict lifecycle: ORDER_PLACED → PROCESSING → PREPARED → DISPATCHED → DELIVERED
 const NEXT_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {
-  ORDER_PLACED: "ORDER_PROCESSING",
-  ORDER_PROCESSING: "ORDER_DELIVERED",
-  ORDER_PREPARED: "ORDER_DELIVERED",
-  ORDER_DISPATCHED: "ORDER_DELIVERED",
+  ORDER_PLACED:      "ORDER_PROCESSING",
+  ORDER_PROCESSING:  "ORDER_PREPARED",
+  ORDER_PREPARED:    "ORDER_DISPATCHED",
+  ORDER_DISPATCHED:  "ORDER_DELIVERED",
 };
 
 const NEXT_LABEL: Partial<Record<OrderStatus, string>> = {
-  ORDER_PLACED: "Accept Order",
-  ORDER_PROCESSING: "Mark Completed",
-  ORDER_PREPARED: "Mark Completed",
-  ORDER_DISPATCHED: "Mark Completed",
+  ORDER_PLACED:      "Accept Order",
+  ORDER_PROCESSING:  "Mark Prepared",
+  ORDER_PREPARED:    "Mark Dispatched",
+  ORDER_DISPATCHED:  "Mark Delivered",
 };
 
 const STATUS_FLOW: OrderStatus[] = [
@@ -108,8 +111,14 @@ function OrderDetailModal({
   const nextStatus = NEXT_STATUS[order.status];
   const nextLabel = NEXT_LABEL[order.status];
 
+  const proofProxyUrl = order.payment_proof_url
+    ? `/api/admin/orders/${order.id}/payment-proof`
+    : null;
   const isImage = order.payment_proof_mime_type?.startsWith("image/") ||
     order.payment_proof_url?.match(/\.(jpg|jpeg|png|webp|gif)(\?|$)/i);
+  const isPdfProof = order.payment_proof_mime_type === "application/pdf" ||
+    order.payment_proof_url?.toLowerCase().includes(".pdf");
+  const isPaidViaWallet = order.payment_status === "PAID";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
@@ -172,21 +181,35 @@ function OrderDetailModal({
 
           {/* Summary grid */}
           <div className="grid grid-cols-2 gap-2.5">
-            {[
-              { label: "Amount", value: `NPR ${Number(order.final_amount).toLocaleString()}` },
-              { label: "Quantity", value: order.quantity.toLocaleString() },
-              { label: "Payment", value: order.payment_status.replace(/_/g, " "), highlight: order.payment_status === "PROOF_SUBMITTED" ? "blue" : order.payment_status === "CONFIRMED" ? "green" : undefined },
-              { label: "Placed", value: new Date(order.created_at).toLocaleDateString() },
-            ].map(({ label, value, highlight }) => (
-              <div key={label} className="rounded-lg bg-slate-50 dark:bg-slate-800 px-3 py-2.5 border border-slate-100 dark:border-slate-700">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
+            <div className="rounded-lg bg-slate-50 dark:bg-slate-800 px-3 py-2.5 border border-slate-100 dark:border-slate-700">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Amount</p>
+              <p className="text-sm font-semibold mt-0.5 text-slate-800 dark:text-slate-200">NPR {Number(order.final_amount).toLocaleString()}</p>
+            </div>
+            <div className="rounded-lg bg-slate-50 dark:bg-slate-800 px-3 py-2.5 border border-slate-100 dark:border-slate-700">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Quantity</p>
+              <p className="text-sm font-semibold mt-0.5 text-slate-800 dark:text-slate-200">{order.quantity.toLocaleString()}</p>
+            </div>
+            <div className="rounded-lg bg-slate-50 dark:bg-slate-800 px-3 py-2.5 border border-slate-100 dark:border-slate-700">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Payment</p>
+              {isPaidViaWallet ? (
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="text-sm font-semibold text-emerald-600">Paid</span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
+                    <Wallet className="h-2.5 w-2.5" /> Wallet
+                  </span>
+                </div>
+              ) : (
                 <p className={`text-sm font-semibold mt-0.5 ${
-                  highlight === "blue" ? "text-blue-600" :
-                  highlight === "green" ? "text-emerald-600" :
+                  order.payment_status === "PROOF_SUBMITTED" ? "text-blue-600" :
+                  order.payment_status === "CONFIRMED" ? "text-emerald-600" :
                   "text-slate-800 dark:text-slate-200"
-                }`}>{value}</p>
-              </div>
-            ))}
+                }`}>{order.payment_status.replace(/_/g, " ")}</p>
+              )}
+            </div>
+            <div className="rounded-lg bg-slate-50 dark:bg-slate-800 px-3 py-2.5 border border-slate-100 dark:border-slate-700">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Placed</p>
+              <p className="text-sm font-semibold mt-0.5 text-slate-800 dark:text-slate-200">{new Date(order.created_at).toLocaleDateString()}</p>
+            </div>
           </div>
 
           {/* Delivery date */}
@@ -243,18 +266,28 @@ function OrderDetailModal({
           {/* Payment proof */}
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Payment Proof</p>
-            {order.payment_proof_url ? (
+            {isPaidViaWallet && !order.payment_proof_url ? (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-900/40 px-4 py-3 flex items-center gap-2">
+                <Wallet className="h-4 w-4 text-emerald-600 flex-shrink-0" />
+                <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400">Paid via wallet — no payment proof required.</p>
+              </div>
+            ) : proofProxyUrl ? (
               <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
                 {isImage && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={order.payment_proof_url}
+                    src={proofProxyUrl}
                     alt="Payment proof"
                     className="w-full max-h-56 object-contain bg-slate-50 dark:bg-slate-800"
                   />
                 )}
+                {isPdfProof && (
+                  <div className="flex items-center justify-center h-24 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+                    <FileText className="h-8 w-8 text-blue-400" />
+                  </div>
+                )}
                 <a
-                  href={order.payment_proof_url}
+                  href={proofProxyUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
@@ -289,7 +322,7 @@ function OrderDetailModal({
             {nextStatus && nextLabel && (
               <Button
                 size="sm"
-                disabled={advancing || actionLoading}
+                disabled={advancing}
                 onClick={() => onAdvance(order)}
                 className="bg-[#0061FF] text-white hover:bg-[#0052d9] px-5"
               >
@@ -388,12 +421,11 @@ export default function OrderManagementPage() {
   const [advancingId, setAdvancingId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (forceRefresh = false) => {
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/orders", { cache: "no-store" });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.message || "Failed to load orders");
+      if (forceRefresh) invalidateCacheKey(ORDERS_CACHE_KEY);
+      const json = await cachedJsonFetch<any>(ORDERS_CACHE_KEY, "/api/admin/orders", 20_000);
       setOrders(Array.isArray(json) ? json : json.data ?? []);
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -427,6 +459,7 @@ export default function OrderManagementPage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.message || "Failed to update status");
+      invalidateCacheKey(ORDERS_CACHE_KEY);
       setOrders((prev) => prev.map((o) => o.id === order.id ? { ...o, status: next } : o));
       setDetailOrder((prev) => prev?.id === order.id ? { ...prev, status: next } : prev);
       toast({ title: "Status Updated", description: `Order moved to ${STATUS_LABELS[next]}` });
@@ -449,6 +482,7 @@ export default function OrderManagementPage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.message || "Failed to cancel order");
+      invalidateCacheKey(ORDERS_CACHE_KEY);
       const updated = { ...cancelTarget, status: "ORDER_CANCELLED" as OrderStatus };
       setOrders((prev) => prev.map((o) => o.id === cancelTarget.id ? updated : o));
       setDetailOrder((prev) => prev?.id === cancelTarget.id ? updated : prev);
@@ -473,6 +507,7 @@ export default function OrderManagementPage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.message || "Failed to set date");
+      invalidateCacheKey(ORDERS_CACHE_KEY);
       const updated = { ...dateTarget, expected_delivery_date: date };
       setOrders((prev) => prev.map((o) => o.id === dateTarget.id ? updated : o));
       setDetailOrder((prev) => prev?.id === dateTarget.id ? updated : prev);
@@ -572,7 +607,7 @@ export default function OrderManagementPage() {
                       onChange={(e) => setSearchTerm(e.target.value)}
                     />
                   </div>
-                  <Button type="button" variant="outline" size="icon" onClick={fetchOrders} title="Refresh" aria-label="Refresh">
+                  <Button type="button" variant="outline" size="icon" onClick={() => fetchOrders(true)} title="Refresh" aria-label="Refresh">
                     <RefreshCw className="h-4 w-4" />
                   </Button>
                 </div>

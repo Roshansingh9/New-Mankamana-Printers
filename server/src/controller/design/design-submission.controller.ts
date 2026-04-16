@@ -10,7 +10,7 @@ import {
 } from "../../services/design/design-submission.service";
 import { designSubmissionSchema, designSubmissionQuerySchema, adminDesignSubmissionQuerySchema, adminApproveSubmissionSchema, adminRejectSubmissionSchema } from "../../validators/design-submission.validator";
 import { AppError } from "../../utils/apperror";
-import { uploadToSupabase } from "../../utils/file-upload";
+import { uploadToSupabase, downloadFromSupabase } from "../../utils/file-upload";
 
 // createDesignSubmission: Handles client uploads for new design reviews, including Supabase file storage
 export const createDesignSubmission = async (req: Request, res: Response, next: any) => {
@@ -227,9 +227,9 @@ export const approveSubmission = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: "Validation failed", errors: validatedBody.error.issues });
     }
 
-    const { note } = validatedBody.data;
+    const { note, extraPrice } = validatedBody.data;
 
-    const result = await approveSubmissionService(submissionId, adminId, note);
+    const result = await approveSubmissionService(submissionId, adminId, note, extraPrice);
 
     res.status(201).json({
       success: true,
@@ -274,5 +274,60 @@ export const rejectSubmission = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error("Error rejecting submission:", error);
     res.status(400).json({ success: false, message: error.message || "Rejection failed" });
+  }
+};
+
+// getAdminSubmissionFile: Admin proxy — streams any design submission file for admin review
+export const getAdminSubmissionFile = async (req: Request, res: Response) => {
+  try {
+    const submissionId = req.params.submissionId as string;
+    const submission = await getAdminSubmissionByIdService(submissionId);
+    if (!submission) return res.status(404).end();
+
+    const filePath = (submission as any).fileUrl;
+    if (!filePath) return res.status(404).end();
+
+    if (filePath.startsWith("http")) return res.redirect(302, filePath);
+
+    const { buffer, mimeType } = await downloadFromSupabase(filePath);
+    const ext = filePath.split(".").pop() || "bin";
+    const fileName = (submission as any).title
+      ? `${String((submission as any).title).replace(/[^a-zA-Z0-9_\-. ]/g, "_")}.${ext}`
+      : "design-file";
+    res.setHeader("Content-Type", mimeType);
+    res.setHeader("Content-Disposition", `inline; filename="${fileName}"`);
+    res.setHeader("Cache-Control", "private, max-age=120");
+    return res.send(buffer);
+  } catch (error) {
+    console.error("Error proxying admin design submission file:", error);
+    return res.status(500).end();
+  }
+};
+
+// getMySubmissionFile: Client proxy — streams the submitted design file from private Supabase storage
+export const getMySubmissionFile = async (req: Request, res: Response) => {
+  try {
+    const submissionId = req.params.submissionId as string;
+    const clientId = (req as any).user.id;
+
+    const submission = await getMySubmissionByIdService(submissionId, clientId);
+    if (!submission) return res.status(404).end();
+
+    const filePath = submission.fileUrl;
+    if (!filePath) return res.status(404).end();
+
+    if (filePath.startsWith("http")) return res.redirect(302, filePath);
+
+    const { buffer, mimeType } = await downloadFromSupabase(filePath);
+    const fileName = submission.title
+      ? `${submission.title.replace(/[^a-zA-Z0-9_\-. ]/g, "_")}.${filePath.split(".").pop() || "bin"}`
+      : "design-file";
+    res.setHeader("Content-Type", mimeType);
+    res.setHeader("Content-Disposition", `inline; filename="${fileName}"`);
+    res.setHeader("Cache-Control", "private, max-age=120");
+    return res.send(buffer);
+  } catch (error) {
+    console.error("Error proxying design submission file:", error);
+    return res.status(500).end();
   }
 };

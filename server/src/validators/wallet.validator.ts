@@ -3,9 +3,8 @@ import { z } from "zod";
 const bankTransferOnlySchema = z
   .string()
   .trim()
-  .refine((value) => value === "BANK_TRANSFER", {
-    message: "paymentMethod must be BANK_TRANSFER",
-  });
+  .min(1, "paymentMethod is required")
+  .max(100, "paymentMethod is too long");
 
 // -- Top-up request --
 // submitTopupSchema: Validates a client's reported payment amount and method
@@ -42,11 +41,11 @@ export const createPaymentDetailsSchema = z.object({
   bankName: z.string().min(1),
   accountName: z.string().min(1),
   accountNumber: z.string().min(1),
-  branch: z.string().optional(),
-  paymentId: z.string().optional(),
-  qrImageUrl: z.string().optional(),
-  note: z.string().max(500).optional(),
-  isActive: z.boolean().optional().default(true),
+  branch: z.string().nullish().transform((v) => v ?? undefined),
+  paymentId: z.string().nullish().transform((v) => v ?? undefined),
+  qrImageUrl: z.string().nullish().transform((v) => v ?? undefined),
+  note: z.string().max(500).nullish().transform((v) => v ?? undefined),
+  isActive: z.coerce.boolean().optional().default(true),
 }).strict();
 
 // -- Validate checkout --

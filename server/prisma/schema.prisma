@@ -325,6 +325,9 @@ model ApprovedDesign {
 
   approvedFileUrl String
 
+  // Fixed surcharge per unit set by admin at approval time (0 = no extra charge)
+  extraPrice Decimal @default(0) @db.Decimal(10, 2)
+
   status ApprovedDesignStatus @default(ACTIVE)
 
   approvedBy_id String?

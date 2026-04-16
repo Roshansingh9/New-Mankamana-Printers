@@ -28,6 +28,20 @@ async function toJsonResponse(apiResponse: Response) {
   return NextResponse.json(data, { status: apiResponse.status });
 }
 
+export async function GET() {
+  const token = await getAuthToken();
+  if (!token) {
+    return NextResponse.json({ message: "Not authenticated." }, { status: 401 });
+  }
+
+  const apiResponse = await fetch(`${API_BASE_URL}/admin/wallet/payment-details`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  return toJsonResponse(apiResponse);
+}
+
 export async function POST(request: Request) {
   const token = await getAuthToken();
   if (!token) {

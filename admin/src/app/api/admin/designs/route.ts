@@ -67,7 +67,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const payload = body?.note ? { note: body.note } : {};
+  const payload: Record<string, unknown> = {};
+  if (body?.note) payload.note = body.note;
+  if (typeof body?.extraPrice === "number" && body.extraPrice > 0) payload.extraPrice = body.extraPrice;
 
   const apiResponse = await fetch(
     `${API_BASE_URL}/admin/design-submissions/${submissionId}/approve`,

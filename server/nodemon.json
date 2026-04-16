@@ -2,5 +2,6 @@
   "watch": ["src", "prisma", ".env"],
   "ext": "ts,js,json,env",
   "ignore": ["dist", "node_modules", "uploads", "swagger-output.json"],
-  "exec": "tsx src/index.ts"
+  "exec": "tsx src/index.ts",
+  "legacyWatch": true
 }

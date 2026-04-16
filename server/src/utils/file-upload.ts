@@ -5,10 +5,18 @@ import { withRetry } from "./resilience";
 // MIME type → file extension mapping (extension from MIME, not from user-supplied filename)
 const MIME_TO_EXT: Record<string, string> = {
   "image/jpeg": "jpg",
+  "image/jpg": "jpg",
   "image/png": "png",
   "image/gif": "gif",
   "image/webp": "webp",
+  "image/bmp": "bmp",
+  "image/tiff": "tiff",
+  "image/svg+xml": "svg",
+  "image/heic": "heic",
+  "image/heif": "heif",
   "application/pdf": "pdf",
+  "application/msword": "doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
 };
 
 /**
@@ -26,6 +34,8 @@ const FOLDER_TO_BUCKET: { prefix: string; bucket: string; isPrivate: boolean }[]
   { prefix: "banners",             bucket: "banners",          isPrivate: false },
   { prefix: "company",             bucket: "product-assets",   isPrivate: false },
   { prefix: "option-values",       bucket: "product-assets",   isPrivate: false },
+  // QR codes are public images shown to clients on the payment page
+  { prefix: "qr-codes",            bucket: "product-assets",   isPrivate: false },
 ];
 
 const FALLBACK_BUCKET = process.env.SUPABASE_BUCKET || "printing-assets";
@@ -43,6 +53,18 @@ function resolveBucket(folder: string): { bucket: string; isPrivate: boolean } {
 export const getSupabasePublicUrl = (filePath: string, bucket?: string): string => {
   const resolvedBucket = bucket ?? FALLBACK_BUCKET;
   const { data } = supabase.storage.from(resolvedBucket).getPublicUrl(filePath);
+  return data.publicUrl;
+};
+
+/**
+ * getPublicUrlForPath
+ * Auto-resolves the correct bucket from the file path prefix, then returns
+ * a public CDN URL. Use this instead of getSupabasePublicUrl when you only
+ * have the stored path and don't know which bucket was used.
+ */
+export const getPublicUrlForPath = (filePath: string): string => {
+  const { bucket } = resolveBucket(filePath);
+  const { data } = supabase.storage.from(bucket).getPublicUrl(filePath);
   return data.publicUrl;
 };
 
@@ -134,6 +156,27 @@ export const uploadToSupabase = async (
     return path;
   }
   return getSupabasePublicUrl(path, bucket);
+};
+
+/**
+ * downloadFromSupabase
+ * Downloads a file from the correct bucket by path and returns it as a Buffer.
+ * Use this to proxy private or Supabase-hosted files through the backend so
+ * browsers that cannot reach supabase.co directly can still receive the file.
+ */
+export const downloadFromSupabase = async (
+  filePath: string
+): Promise<{ buffer: Buffer; mimeType: string }> => {
+  const { bucket } = resolveBucket(filePath);
+  const { data, error } = await withRetry(
+    () => supabase.storage.from(bucket).download(filePath),
+    { retries: 2, timeoutMs: 10000, backoffMs: 300 }
+  );
+  if (error || !data) {
+    throw new Error(`Failed to download file from Supabase: ${error?.message}`);
+  }
+  const buffer = Buffer.from(await data.arrayBuffer());
+  return { buffer, mimeType: data.type || "application/octet-stream" };
 };
 
 // uploadFileToSupabase: Thin alias used by the generic upload controller

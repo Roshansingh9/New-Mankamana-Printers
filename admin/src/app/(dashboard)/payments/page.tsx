@@ -24,12 +24,16 @@ import {
   approveAdminTopupRequest,
   createAdminPaymentDetails,
   fetchAdminClientWalletSummary,
+  fetchAdminPaymentDetails,
   fetchAdminTopupRequestById,
   fetchAdminTopupRequests,
   fetchAdminWalletNotifications,
   fetchAdminWalletTransactions,
   markAdminWalletNotificationRead,
   rejectAdminTopupRequest,
+  invalidateWalletCache,
+  invalidatePaymentDetailsCache,
+  type AdminPaymentDetailsApi,
   type WalletClientSummaryApi,
   type WalletNotificationApi,
   type WalletTopupDetailApi,
@@ -39,6 +43,8 @@ import {
 import {
   CheckCircle,
   ClipboardCheck,
+  Eye,
+  FileText,
   Receipt,
   Search,
   XCircle,
@@ -81,6 +87,8 @@ const formatPaymentMethod = (method?: string | null) => {
   return method;
 };
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
+
 export default function PaymentsPage() {
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
@@ -116,6 +124,8 @@ export default function PaymentsPage() {
     note: "",
   });
   const [qrFile, setQrFile] = useState<File | null>(null);
+  const [existingQrUrl, setExistingQrUrl] = useState<string | null>(null);
+  const [paymentFormLoading, setPaymentFormLoading] = useState(true);
 
   const [clientLookupId, setClientLookupId] = useState("");
   const [clientSummary, setClientSummary] =
@@ -145,9 +155,36 @@ export default function PaymentsPage() {
     }
   }, []);
 
+  // Direct fetch (no cache) so the form always shows current DB values on load and after save
+  const loadPaymentDetails = useCallback(async () => {
+    setPaymentFormLoading(true);
+    try {
+      const res = await fetch("/api/admin/wallet/payment-details", { cache: "no-store" });
+      if (!res.ok) return;
+      const json = await res.json();
+      const details: AdminPaymentDetailsApi | undefined = json?.data;
+      if (!details) return;
+      setPaymentForm({
+        companyName: details.companyName ?? "",
+        bankName: details.bankName ?? "",
+        accountName: details.accountName ?? "",
+        accountNumber: details.accountNumber ?? "",
+        branch: details.branch ?? "",
+        paymentId: details.paymentId ?? "",
+        note: details.note ?? "",
+      });
+      setExistingQrUrl(details.qrImageUrl ?? null);
+    } catch {
+      // silently ignore — form stays blank, user can still fill manually
+    } finally {
+      setPaymentFormLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void loadData();
-  }, [loadData]);
+    void loadPaymentDetails();
+  }, [loadData, loadPaymentDetails]);
 
   const filteredTopups = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -215,6 +252,7 @@ export default function PaymentsPage() {
         approvedAmount: amount,
         note: approveNote.trim() || undefined,
       });
+      invalidateWalletCache();
       toast({
         title: "Top-up approved",
         description: "Wallet credited successfully.",
@@ -254,6 +292,7 @@ export default function PaymentsPage() {
         reason: rejectReason.trim(),
         reasonCode: rejectReasonCode.trim() || undefined,
       });
+      invalidateWalletCache();
       toast({
         title: "Top-up rejected",
         description: "Client has been notified.",
@@ -313,6 +352,7 @@ export default function PaymentsPage() {
         approvedAmount: amount,
         reason: adjustReason.trim(),
       });
+      invalidateWalletCache();
       toast({
         title: "Top-up adjusted",
         description: "Wallet balance and ledger updated.",
@@ -346,11 +386,15 @@ export default function PaymentsPage() {
         note: paymentForm.note || undefined,
         isActive: true,
       });
+      invalidatePaymentDetailsCache();
+      setQrFile(null);
       toast({
         title: "Payment details saved",
         description: "Clients will see the updated details immediately.",
         variant: "success",
       });
+      // Re-fetch all fields so the form always reflects what's actually in the DB
+      void loadPaymentDetails();
     } catch (err) {
       toast({
         title: "Save failed",
@@ -491,6 +535,28 @@ export default function PaymentsPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {paymentFormLoading ? (
+            <>
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="space-y-2">
+                  <div className="h-4 w-24 rounded bg-slate-100 animate-pulse" />
+                  <div className="h-9 w-full rounded-md bg-slate-100 animate-pulse" />
+                </div>
+              ))}
+              <div className="space-y-2 md:col-span-2">
+                <div className="h-4 w-20 rounded bg-slate-100 animate-pulse" />
+                <div className="h-24 w-full rounded-lg bg-slate-100 animate-pulse" />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <div className="h-4 w-16 rounded bg-slate-100 animate-pulse" />
+                <div className="h-9 w-full rounded-md bg-slate-100 animate-pulse" />
+              </div>
+              <div className="md:col-span-2 flex justify-end">
+                <div className="h-9 w-40 rounded-md bg-slate-100 animate-pulse" />
+              </div>
+            </>
+          ) : (
+          <>
           <div className="space-y-2">
             <Label>Company Name</Label>
             <Input
@@ -571,19 +637,72 @@ export default function PaymentsPage() {
           </div>
           <div className="space-y-2 md:col-span-2">
             <Label>QR Image</Label>
-            <label
-              htmlFor="qr-file-input"
-              className={`flex items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer transition-colors text-sm ${qrFile ? "border-emerald-400 bg-emerald-50 text-emerald-700" : "border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-500"}`}
-            >
-              <input
-                id="qr-file-input"
-                type="file"
-                accept="image/png,image/jpeg,image/jpg,image/webp"
-                className="hidden"
-                onChange={(e) => setQrFile(e.target.files?.[0] || null)}
-              />
-              {qrFile ? `✓ ${qrFile.name} (click to change)` : "Click to upload QR image (PNG, JPG)"}
-            </label>
+            {/* Show existing QR preview if no new file is selected */}
+            {existingQrUrl && !qrFile && (
+              <div className="flex items-start gap-4 p-3 rounded-lg border border-blue-200 bg-blue-50">
+                <img
+                  src={`${API_BASE}/wallet/qr-image`}
+                  alt="Current QR Code"
+                  className="h-28 w-28 object-contain rounded border border-blue-200 bg-white p-1 shrink-0"
+                />
+                <div className="flex flex-col gap-1.5 min-w-0">
+                  <p className="text-sm font-medium text-blue-700">Current QR Code</p>
+                  <p className="text-xs text-blue-500 break-all">{existingQrUrl.split("/").pop()}</p>
+                  <label
+                    htmlFor="qr-file-input"
+                    className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white border border-blue-300 text-xs font-medium text-blue-700 cursor-pointer hover:bg-blue-100 transition-colors w-fit"
+                  >
+                    Replace QR Image
+                  </label>
+                </div>
+              </div>
+            )}
+            {/* Show new file preview if a file is selected */}
+            {qrFile && (
+              <div className="flex items-start gap-4 p-3 rounded-lg border border-emerald-200 bg-emerald-50">
+                <img
+                  src={URL.createObjectURL(qrFile)}
+                  alt="New QR Code Preview"
+                  className="h-28 w-28 object-contain rounded border border-emerald-200 bg-white p-1 shrink-0"
+                />
+                <div className="flex flex-col gap-1.5 min-w-0">
+                  <p className="text-sm font-medium text-emerald-700">New QR Code (Preview)</p>
+                  <p className="text-xs text-emerald-600">{qrFile.name}</p>
+                  <p className="text-xs text-emerald-500">({(qrFile.size / 1024).toFixed(1)} KB)</p>
+                  <div className="flex gap-2 mt-1">
+                    <label
+                      htmlFor="qr-file-input"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white border border-emerald-300 text-xs font-medium text-emerald-700 cursor-pointer hover:bg-emerald-100 transition-colors w-fit"
+                    >
+                      Change File
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setQrFile(null)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white border border-red-200 text-xs font-medium text-red-600 cursor-pointer hover:bg-red-50 transition-colors"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {/* Upload prompt when no existing QR and no new file */}
+            {!existingQrUrl && !qrFile && (
+              <label
+                htmlFor="qr-file-input"
+                className="flex items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer transition-colors text-sm border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-500"
+              >
+                Click to upload QR image (PNG, JPG, GIF, WebP, SVG, PDF…)
+              </label>
+            )}
+            <input
+              id="qr-file-input"
+              type="file"
+              accept="image/*,application/pdf,.doc,.docx"
+              className="hidden"
+              onChange={(e) => setQrFile(e.target.files?.[0] || null)}
+            />
           </div>
           <div className="space-y-2 md:col-span-2">
             <Label>Notes</Label>
@@ -603,6 +722,8 @@ export default function PaymentsPage() {
               Save Payment Details
             </Button>
           </div>
+          </>
+          )}
         </CardContent>
       </Card>
 
@@ -1006,29 +1127,46 @@ export default function PaymentsPage() {
               </div>
 
               <div className="space-y-4">
-                <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
-                  {selectedTopup.proofFileUrl ? (
-                    <img
-                      src={selectedTopup.proofFileUrl}
-                      alt="Payment proof"
-                      className="h-56 w-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-56 items-center justify-center text-sm text-slate-400">
-                      Proof image not available
-                    </div>
-                  )}
-                </div>
-                {selectedTopup.proofFileUrl ? (
-                  <a
-                    href={selectedTopup.proofFileUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs font-medium text-[#0061FF] hover:underline"
-                  >
-                    Open full proof image
-                  </a>
-                ) : null}
+                {(() => {
+                  const proxyUrl = selectedTopup.proofFileUrl
+                    ? `/api/admin/wallet/topup-requests/${selectedTopup.requestId}/proof`
+                    : null;
+                  const isPdf = selectedTopup.proofFileUrl?.toLowerCase().includes(".pdf");
+                  return (
+                    <>
+                      <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
+                        {proxyUrl && !isPdf ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={proxyUrl}
+                            alt="Payment proof"
+                            className="h-56 w-full object-contain bg-slate-50 dark:bg-slate-900"
+                          />
+                        ) : proxyUrl && isPdf ? (
+                          <div className="flex h-56 flex-col items-center justify-center gap-3 bg-slate-50 dark:bg-slate-900 text-slate-500">
+                            <FileText className="h-10 w-10 text-blue-400" />
+                            <p className="text-xs font-medium">PDF payment proof</p>
+                          </div>
+                        ) : (
+                          <div className="flex h-56 items-center justify-center text-sm text-slate-400">
+                            Proof not available
+                          </div>
+                        )}
+                      </div>
+                      {proxyUrl && (
+                        <a
+                          href={proxyUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center gap-1.5 text-xs font-medium text-[#0061FF] hover:underline"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          {isPdf ? "Open proof PDF" : "Open full proof image"}
+                        </a>
+                      )}
+                    </>
+                  );
+                })()}
 
                 <div className="space-y-2">
                   <Label>Status</Label>

@@ -285,3 +285,10 @@
 .ct-toast-success{
 font-family:'Inter',sans-serif!important;
 }
+
+/* Services page hero grid overlay */
+.hero-grid-overlay {
+  background-image:
+    repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(255,255,255,0.06) 39px, rgba(255,255,255,0.06) 40px),
+    repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(255,255,255,0.06) 39px, rgba(255,255,255,0.06) 40px);
+}

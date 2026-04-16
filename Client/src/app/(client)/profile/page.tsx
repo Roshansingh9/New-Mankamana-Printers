@@ -31,11 +31,10 @@ export default function ProfilePage() {
     });
 
     useEffect(() => {
-        const fetchProfile = async () => {
-            try {
-                const res = await fetch(`${API_BASE}/user/profile`, { headers: getAuthHeaders() });
-                const data = await res.json();
-                if (res.ok && data.data) {
+        fetch(`${API_BASE}/user/profile`, { headers: getAuthHeaders() })
+            .then((r) => r.json())
+            .then((data) => {
+                if (data.data) {
                     const p: ProfileData = data.data;
                     setProfile(p);
                     setForm({
@@ -45,11 +44,8 @@ export default function ProfilePage() {
                         address: p.address || "",
                     });
                 }
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchProfile();
+            })
+            .finally(() => setLoading(false));
     }, []);
 
     const handleSave = async () => {
@@ -61,10 +57,7 @@ export default function ProfilePage() {
                 body: JSON.stringify(form),
             });
             const data = await res.json();
-            if (!res.ok) {
-                notify.error(data.message || "Failed to update profile");
-                return;
-            }
+            if (!res.ok) { notify.error(data.error?.message || data.message || "Failed to update profile"); return; }
             setProfile(data.data);
             setEditing(false);
             notify.success("Profile updated successfully!");
@@ -76,158 +69,187 @@ export default function ProfilePage() {
     };
 
     const displayName = profile?.owner_name || user?.ownerName || "C";
+    const initials = displayName[0]?.toUpperCase() ?? "C";
+    const clientCode = profile?.client_code || user?.clientId;
+
+    const inputCls = (editable: boolean) =>
+        `w-full px-3.5 py-2.5 rounded-lg border text-sm outline-none transition-all ${
+            editable
+                ? "border-slate-200 bg-white focus:border-[#0f172a] focus:ring-2 focus:ring-[#0f172a]/10"
+                : "border-slate-100 bg-slate-50 text-slate-500 cursor-not-allowed"
+        }`;
 
     return (
-        <div className="max-w-5xl mx-auto px-3 sm:px-6 py-8 sm:py-12">
-            <div className="mb-8">
-                <h1 className="text-xl max-sm:text-center sm:text-2xl font-extrabold text-[#0f172a]">My Profile</h1>
-                <p className="text-[#64748b] max-sm:text-center text-sm sm:text-base mt-1">
-                    View and manage your company account details.
-                </p>
+        <div className="min-h-[calc(100vh-68px)] bg-[#f8f7f4]">
+            {/* Hero header */}
+            <div className="relative overflow-hidden bg-[#0f172a] px-6 py-10 sm:py-12">
+                <div className="hero-grid-overlay pointer-events-none absolute inset-0" />
+                <div className="relative max-w-5xl mx-auto flex items-center gap-4">
+                    <div className="w-14 h-14 rounded-full bg-amber-400 flex items-center justify-center text-[#0f172a] text-2xl font-black shrink-0 ring-4 ring-amber-400/20">
+                        {initials}
+                    </div>
+                    <div>
+                        <p className="text-[0.68rem] font-bold uppercase tracking-[0.1em] text-slate-400 mb-0.5">B2B Account</p>
+                        <h1 className="font-serif text-2xl sm:text-3xl font-black text-white leading-tight">
+                            {profile?.business_name || user?.businessName || "My Profile"}
+                        </h1>
+                        {clientCode && (
+                            <p className="text-slate-400 text-xs mt-0.5 font-mono">{clientCode}</p>
+                        )}
+                    </div>
+                </div>
             </div>
 
-            {loading ? (
-                <div className="bg-white rounded-2xl border border-[#e2e8f0] p-12 text-center text-[#94a3b8]">
-                    Loading profile…
-                </div>
-            ) : (
-                <div className="flex flex-col gap-7 max-sm:items-center md:grid md:grid-cols-[320px_1fr] md:gap-7 items-start">
-                    {/* Profile Card */}
-                    <div className="bg-white rounded-2xl border border-[#e2e8f0] overflow-hidden mb-5 md:mb-0 w-full">
-                        <div className="gradient-card p-8 sm:p-10 text-center">
-                            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white/20 flex items-center justify-center mx-auto mb-4 text-2xl sm:text-3xl text-white font-extrabold border-[3px] border-white/40">
-                                {displayName[0]?.toUpperCase() || "C"}
-                            </div>
-                            <h2 className="text-white font-extrabold text-base sm:text-lg tracking-wide">
-                                {profile?.business_name || user?.businessName}
-                            </h2>
-                            <p className="text-white/75 text-xs sm:text-sm mt-1">
-                                {profile?.email || user?.email}
-                            </p>
-                        </div>
-                        <div className="p-5 sm:p-6">
-                            <div className="flex flex-col gap-3">
-                                <div className="p-3 bg-[#f0f4ff] rounded-[10px] border border-[#c7d9fd]">
-                                    <div className="text-[0.65rem] font-bold text-[#4361ee] tracking-wider uppercase mb-1">
-                                        Client ID
-                                    </div>
-                                    <div className="text-lg font-extrabold text-[#0f172a] tracking-wide">
-                                        {profile?.client_code || user?.clientId}
-                                    </div>
-                                </div>
-                                <div className="p-3 bg-[#f8fafc] rounded-[10px] border border-[#e2e8f0]">
-                                    <div className="text-[0.65rem] font-bold text-[#64748b] tracking-wider uppercase mb-1">
-                                        Phone
-                                    </div>
-                                    <div className="text-[0.9rem] font-semibold text-[#0f172a]">
-                                        {profile?.phone_number || user?.phoneNumber}
-                                    </div>
-                                </div>
-                                <div>
-                                    <div className="text-xs text-[#94a3b8] mb-1">Account Status</div>
-                                    <span className="badge bg-[#dcfce7] text-[#16a34a]">
-                                        ● {profile?.status === "active" ? "Active" : profile?.status || "Active"}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
+            <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
+                {loading ? (
+                    <div className="bg-white rounded-2xl border border-slate-100 p-12 text-center animate-pulse">
+                        <div className="h-4 w-32 bg-slate-100 rounded mx-auto mb-3" />
+                        <div className="h-3 w-48 bg-slate-100 rounded mx-auto" />
                     </div>
-
-                    {/* Details Form */}
-                    <div className="bg-white rounded-2xl border border-[#e2e8f0] p-5 sm:p-7 w-full">
-                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
-                            <h2 className="font-bold text-base sm:text-lg text-[#0f172a]">Company Details</h2>
-                            {editing ? (
-                                <div className="flex gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setEditing(false)}
-                                        className="btn-outline-dark py-2 px-4 text-sm"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={handleSave}
-                                        disabled={saving}
-                                        className={`btn-primary py-2 px-5 text-sm ${saving ? "opacity-70" : ""}`}
-                                    >
-                                        {saving ? "Saving…" : "Save Changes"}
-                                    </button>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-6 items-start">
+                        {/* Left sidebar card */}
+                        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                            {/* Color band */}
+                            <div className="h-2 bg-gradient-to-r from-[#0f172a] to-slate-700" />
+                            <div className="p-6">
+                                <div className="flex flex-col items-center text-center mb-5">
+                                    <div className="w-16 h-16 rounded-full bg-[#0f172a] flex items-center justify-center text-white text-2xl font-black mb-3">
+                                        {initials}
+                                    </div>
+                                    <h2 className="font-bold text-slate-900 text-base leading-tight">
+                                        {profile?.business_name || user?.businessName}
+                                    </h2>
+                                    <p className="text-slate-400 text-xs mt-0.5">{profile?.email || user?.email}</p>
                                 </div>
-                            ) : (
-                                <button
-                                    type="button"
-                                    onClick={() => setEditing(true)}
-                                    className="btn-outline-dark py-2 px-5 text-sm"
-                                >
-                                    Edit
-                                </button>
-                            )}
+
+                                <div className="space-y-2.5">
+                                    <div className="rounded-lg bg-[#0f172a]/5 border border-[#0f172a]/10 px-3.5 py-3">
+                                        <p className="text-[0.62rem] font-bold uppercase tracking-[0.1em] text-slate-400 mb-0.5">Client ID</p>
+                                        <p className="font-mono font-extrabold text-[#0f172a] text-base tracking-wide">
+                                            {clientCode || "—"}
+                                        </p>
+                                    </div>
+
+                                    <div className="rounded-lg bg-slate-50 border border-slate-100 px-3.5 py-3">
+                                        <p className="text-[0.62rem] font-bold uppercase tracking-[0.1em] text-slate-400 mb-0.5">Phone</p>
+                                        <p className="font-semibold text-slate-800 text-sm">{profile?.phone_number || user?.phoneNumber || "—"}</p>
+                                    </div>
+
+                                    <div className="rounded-lg bg-slate-50 border border-slate-100 px-3.5 py-3">
+                                        <p className="text-[0.62rem] font-bold uppercase tracking-[0.1em] text-slate-400 mb-1">Status</p>
+                                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                            {profile?.status === "active" ? "Active" : profile?.status || "Active"}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                            {[
-                                { label: "Business Name", name: "business_name" as const },
-                                { label: "Owner Name", name: "owner_name" as const },
-                                { label: "Email Address", name: "email" as const },
-                            ].map(({ label, name }) => (
-                                <div key={name} className="form-group flex flex-col">
-                                    <label htmlFor={`field-${name}`} className="form-label mb-1">{label}</label>
+                        {/* Right: Details form */}
+                        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-50">
+                                <div>
+                                    <h2 className="font-bold text-[#0f172a] text-base">Company Details</h2>
+                                    <p className="text-slate-400 text-xs mt-0.5">Update your business information</p>
+                                </div>
+                                {editing ? (
+                                    <div className="flex gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditing(false)}
+                                            className="px-4 py-2 rounded-lg border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 transition-colors"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleSave}
+                                            disabled={saving}
+                                            className="px-5 py-2 rounded-lg bg-[#0f172a] text-white text-sm font-bold hover:bg-slate-800 disabled:opacity-60 transition-colors"
+                                        >
+                                            {saving ? "Saving…" : "Save Changes"}
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={() => setEditing(true)}
+                                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 transition-colors"
+                                    >
+                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                        Edit
+                                    </button>
+                                )}
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {([
+                                    { label: "Business Name", name: "business_name" as const, placeholder: "e.g. ABC Enterprises" },
+                                    { label: "Owner Name", name: "owner_name" as const, placeholder: "e.g. Ram Sharma" },
+                                    { label: "Email Address", name: "email" as const, placeholder: "e.g. contact@business.com" },
+                                ] as const).map(({ label, name, placeholder }) => (
+                                    <div key={name}>
+                                        <label htmlFor={`field-${name}`} className="block text-[0.7rem] font-bold uppercase tracking-[0.08em] text-slate-400 mb-1.5">{label}</label>
+                                        <input
+                                            id={`field-${name}`}
+                                            className={inputCls(editing)}
+                                            value={form[name]}
+                                            onChange={(e) => setForm((p) => ({ ...p, [name]: e.target.value }))}
+                                            disabled={!editing}
+                                            placeholder={placeholder}
+                                        />
+                                    </div>
+                                ))}
+                                <div>
+                                    <label htmlFor="field-phone" className="block text-[0.7rem] font-bold uppercase tracking-[0.08em] text-slate-400 mb-1.5">Phone Number</label>
                                     <input
-                                        id={`field-${name}`}
-                                        className={`form-input text-sm ${
-                                            editing
-                                                ? "bg-[#f8fafc] cursor-text focus:ring-2 focus:ring-[#1a56db] focus:border-[#1a56db] outline-none"
-                                                : "bg-[#f1f5f9] cursor-not-allowed"
-                                        }`}
-                                        value={form[name]}
-                                        onChange={(e) => setForm((p) => ({ ...p, [name]: e.target.value }))}
-                                        disabled={!editing}
+                                        id="field-phone"
+                                        className={inputCls(false)}
+                                        value={profile?.phone_number || user?.phoneNumber || ""}
+                                        disabled
+                                        placeholder="—"
                                     />
                                 </div>
-                            ))}
-                            <div className="form-group flex flex-col">
-                                <label htmlFor="field-phone" className="form-label mb-1">Phone Number</label>
-                                <input
-                                    id="field-phone"
-                                    className="form-input text-sm bg-[#f1f5f9] cursor-not-allowed"
-                                    value={profile?.phone_number || user?.phoneNumber || ""}
-                                    disabled
-                                />
+                                <div className="sm:col-span-2">
+                                    <label htmlFor="field-address" className="block text-[0.7rem] font-bold uppercase tracking-[0.08em] text-slate-400 mb-1.5">Business Address</label>
+                                    <input
+                                        id="field-address"
+                                        className={inputCls(editing)}
+                                        value={form.address}
+                                        onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))}
+                                        disabled={!editing}
+                                        placeholder="e.g. Kathmandu, Nepal"
+                                    />
+                                </div>
                             </div>
-                            <div className="form-group col-span-1 sm:col-span-2 flex flex-col">
-                                <label htmlFor="field-address" className="form-label mb-1">Business Address</label>
-                                <input
-                                    id="field-address"
-                                    className={`form-input text-sm ${
-                                        editing
-                                            ? "bg-[#f8fafc] cursor-text focus:ring-2 focus:ring-[#1a56db] focus:border-[#1a56db] outline-none"
-                                            : "bg-[#f1f5f9] cursor-not-allowed"
-                                    }`}
-                                    value={form.address}
-                                    onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))}
-                                    disabled={!editing}
-                                    placeholder="e.g. Kathmandu, Nepal"
-                                />
-                            </div>
-                        </div>
 
-                        <div className="mt-7 p-4 sm:p-5 bg-[#f8fafc] rounded-[10px] border border-[#e2e8f0]">
-                            <h3 className="font-bold text-sm sm:text-base text-[#0f172a] mb-2">Need to change your password?</h3>
-                            <p className="text-[#64748b] text-xs sm:text-sm leading-relaxed">
-                                Passwords are managed by admin. Please contact us via email to reset your Client ID or password.
-                            </p>
-                            <a
-                                href={`mailto:roshan.kr.singh9857@gmail.com?subject=Password Reset Request&body=Hello Admin, I need help with my account (Client ID: ${profile?.client_code || user?.clientId})`}
-                                className="mt-4 inline-block py-2 px-5 bg-[#0061FF] text-white rounded-lg font-bold text-sm hover:bg-[#0050d5] transition-colors"
-                            >
-                                Contact Admin via Email
-                            </a>
+                            {/* Password reset info */}
+                            <div className="mt-6 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                                <div className="flex items-start gap-3">
+                                    <div className="w-8 h-8 rounded-lg bg-[#0f172a]/10 flex items-center justify-center shrink-0 mt-0.5">
+                                        <svg className="w-4 h-4 text-[#0f172a]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-sm text-[#0f172a] mb-1">Need to change your password?</h3>
+                                        <p className="text-slate-500 text-xs leading-relaxed">
+                                            Passwords are managed by admin. Contact us to reset your credentials.
+                                        </p>
+                                        <a
+                                            href={`mailto:roshan.kr.singh9857@gmail.com?subject=Password Reset Request&body=Hello Admin, I need help with my account (Client ID: ${clientCode})`}
+                                            className="inline-flex items-center gap-1.5 mt-3 px-3.5 py-2 bg-[#0f172a] text-white rounded-lg text-xs font-bold hover:bg-slate-800 transition-colors"
+                                        >
+                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                                            Contact Admin
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )}
+            </div>
         </div>
     );
 }

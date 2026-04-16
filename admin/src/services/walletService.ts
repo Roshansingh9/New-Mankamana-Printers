@@ -94,6 +94,8 @@ export interface WalletClientSummaryApi {
   totalDebits: number;
 }
 
+import { cachedJsonFetch, invalidateCacheKey } from "@/lib/requestCache";
+
 const safeJson = async (response: Response) => {
   const raw = await response.text();
   if (!raw || raw.trim().length === 0) {
@@ -104,6 +106,15 @@ const safeJson = async (response: Response) => {
   } catch {
     return { message: raw };
   }
+};
+
+const TOPUP_REQUESTS_CACHE_KEY = "admin-wallet-topup-requests";
+const TRANSACTIONS_CACHE_KEY = "admin-wallet-transactions";
+const PAYMENT_DETAILS_CACHE_KEY = "admin-wallet-payment-details";
+
+export const invalidateWalletCache = () => {
+  invalidateCacheKey(TOPUP_REQUESTS_CACHE_KEY);
+  invalidateCacheKey(TRANSACTIONS_CACHE_KEY);
 };
 
 export const fetchAdminTopupRequests = async (params?: {
@@ -120,19 +131,11 @@ export const fetchAdminTopupRequests = async (params?: {
   if (params?.page) query.set("page", String(params.page));
   if (params?.limit) query.set("limit", String(params.limit));
 
-  const response = await fetch(
-    `/api/admin/wallet/topup-requests${query.toString() ? `?${query}` : ""}`,
-    {
-      method: "GET",
-      cache: "no-store",
-    }
-  );
+  const url = `/api/admin/wallet/topup-requests${query.toString() ? `?${query}` : ""}`;
+  const cacheKey = query.toString() ? `${TOPUP_REQUESTS_CACHE_KEY}:${query}` : TOPUP_REQUESTS_CACHE_KEY;
 
-  const data = await safeJson(response);
-  if (!response.ok) {
-    throw new Error(data?.message || "Failed to load top-up requests.");
-  }
-
+  const data = await cachedJsonFetch<any>(cacheKey, url, 15_000);
+  if (!data?.success) throw new Error(data?.message || "Failed to load top-up requests.");
   return data as { success: boolean; data: WalletTopupListResponseApi };
 };
 
@@ -274,21 +277,32 @@ export const fetchAdminWalletTransactions = async (params?: {
   if (params?.page) query.set("page", String(params.page));
   if (params?.limit) query.set("limit", String(params.limit));
 
-  const response = await fetch(
-    `/api/admin/wallet/transactions${query.toString() ? `?${query}` : ""}`,
-    {
-      method: "GET",
-      cache: "no-store",
-    }
-  );
+  const url = `/api/admin/wallet/transactions${query.toString() ? `?${query}` : ""}`;
+  const cacheKey = query.toString() ? `${TRANSACTIONS_CACHE_KEY}:${query}` : TRANSACTIONS_CACHE_KEY;
 
-  const data = await safeJson(response);
-  if (!response.ok) {
-    throw new Error(data?.message || "Failed to load wallet transactions.");
-  }
-
+  const data = await cachedJsonFetch<any>(cacheKey, url, 30_000);
+  if (!data?.success) throw new Error(data?.message || "Failed to load wallet transactions.");
   return data as { success: boolean; data: WalletTransactionResponseApi };
 };
+
+export interface AdminPaymentDetailsApi {
+  companyName: string;
+  bankName: string;
+  accountName: string;
+  accountNumber: string;
+  branch?: string | null;
+  paymentId?: string | null;
+  qrImageUrl?: string | null;
+  note?: string | null;
+}
+
+export const fetchAdminPaymentDetails = async (): Promise<AdminPaymentDetailsApi | null> => {
+  const data = await cachedJsonFetch<any>(PAYMENT_DETAILS_CACHE_KEY, "/api/admin/wallet/payment-details", 60_000);
+  if (!data?.success) return null;
+  return (data as { success: boolean; data: AdminPaymentDetailsApi }).data ?? null;
+};
+
+export const invalidatePaymentDetailsCache = () => invalidateCacheKey(PAYMENT_DETAILS_CACHE_KEY);
 
 export const createAdminPaymentDetails = async (payload: {
   companyName: string;

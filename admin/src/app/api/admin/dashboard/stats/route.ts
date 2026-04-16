@@ -49,6 +49,7 @@ export async function GET() {
     data: {
       active_orders: ordersData.filter((o: any) => activeStatuses.includes(o.status)).length,
       total_orders: ordersData.length,
+      pending_orders: ordersData.filter((o: any) => o.status === "ORDER_PLACED").length,
       pending_registrations: registrationsData.length,
       pending_designs: designsData.length,
       total_clients: clientsData.length,

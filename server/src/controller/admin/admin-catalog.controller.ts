@@ -61,6 +61,7 @@ export const createService = async (req: Request, res: Response) => {
 export const listProducts = async (req: Request, res: Response) => {
   try {
     const products = await prisma.product.findMany({
+      where: { is_active: true },
       include: {
         variants: {
           take: 1,
@@ -90,6 +91,7 @@ export const listProducts = async (req: Request, res: Response) => {
               label: g.label,
               type: "select",
               is_required: g.is_required,
+              is_pricing_field: g.is_pricing_dimension,
               display_order: g.display_order,
               options: g.values.map((v) => ({
                 id: v.id,
@@ -194,6 +196,7 @@ export const getProductById = async (req: Request, res: Response) => {
               label: g.label,
               type: "select",
               is_required: g.is_required,
+              is_pricing_field: g.is_pricing_dimension,
               display_order: g.display_order,
               options: g.values.map((v) => ({
                 id: v.id,
@@ -277,6 +280,7 @@ export const createProductField = async (req: Request, res: Response) => {
         label: group.label,
         type: "select",
         is_required: group.is_required,
+        is_pricing_field: group.is_pricing_dimension,
         display_order: group.display_order,
         options: [],
       },
@@ -292,13 +296,14 @@ export const createProductField = async (req: Request, res: Response) => {
 export const updateField = async (req: Request, res: Response) => {
   try {
     const fieldId = req.params.fieldId as string;
-    const { label, is_required, display_order } = req.body;
+    const { label, is_required, is_pricing_field, display_order } = req.body;
 
     const group = await prisma.optionGroup.update({
       where: { id: fieldId },
       data: {
         ...(label !== undefined && { label }),
         ...(is_required !== undefined && { is_required }),
+        ...(is_pricing_field !== undefined && { is_pricing_dimension: is_pricing_field }),
         ...(display_order !== undefined && { display_order }),
       },
       include: { values: { orderBy: { display_order: "asc" } } },
@@ -312,6 +317,7 @@ export const updateField = async (req: Request, res: Response) => {
         label: group.label,
         type: "select",
         is_required: group.is_required,
+        is_pricing_field: group.is_pricing_dimension,
         display_order: group.display_order,
         options: group.values.map((v) => ({
           id: v.id,
@@ -477,7 +483,9 @@ export const createProductPricing = async (req: Request, res: Response) => {
     }
 
     const sortedKeys = Object.keys(resolvedOptions).sort();
-    const combination_key = sortedKeys.map((k) => `${k}:${resolvedOptions[k]}`).join("|");
+    const combination_key = sortedKeys.length === 0
+      ? "__NO_OPTIONS__"
+      : sortedKeys.map((k) => `${k}:${resolvedOptions[k]}`).join("|");
 
     const existing = await prisma.variantPricing.findFirst({
       where: { variant_id: variant.id, combination_key },

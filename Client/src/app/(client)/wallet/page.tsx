@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { getAuthHeaders } from "@/store/authStore";
+import { fetchJsonCached } from "@/utils/requestCache";
 import { formatDate, formatCurrency } from "@/utils/helpers";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
@@ -14,7 +15,7 @@ interface WalletBalance {
 }
 
 interface Transaction {
-    id: string;
+    transactionId: string;
     type: "CREDIT" | "DEBIT";
     source: string;
     amount: string | number;
@@ -25,16 +26,16 @@ interface Transaction {
 }
 
 interface TopupRequest {
-    id: string;
+    requestId: string;
     submittedAmount: string | number;
     approvedAmount?: string | number | null;
     paymentMethod: string;
-    transferReference?: string;
-    note?: string;
+    transferReference?: string | null;
+    note?: string | null;
     status: "PENDING_REVIEW" | "APPROVED" | "REJECTED";
-    rejectionReason?: string;
-    createdAt: string;
-    reviewedAt?: string;
+    rejectionReason?: string | null;
+    submittedAt: string;
+    reviewedAt?: string | null;
 }
 
 const TXN_TYPE_FILTERS = [
@@ -50,19 +51,36 @@ const TOPUP_STATUS_FILTERS = [
     { label: "Rejected", value: "REJECTED" },
 ];
 
-const topupStatusBadge = (status: string) => {
-    const map: Record<string, string> = {
-        PENDING_REVIEW: "bg-yellow-100 text-yellow-700",
-        APPROVED: "bg-green-100 text-green-700",
-        REJECTED: "bg-red-100 text-red-700",
-    };
-    const label: Record<string, string> = {
-        PENDING_REVIEW: "Pending Review",
-        APPROVED: "Approved",
-        REJECTED: "Rejected",
-    };
-    return { cls: map[status] || "bg-gray-100 text-gray-600", label: label[status] || status };
+const TOPUP_STATUS_CONFIG: Record<string, { cls: string; label: string; dot: string }> = {
+    PENDING_REVIEW: { cls: "bg-amber-50 text-amber-700 border border-amber-200", label: "Pending Review", dot: "bg-amber-400" },
+    APPROVED:       { cls: "bg-emerald-50 text-emerald-700 border border-emerald-200", label: "Approved", dot: "bg-emerald-500" },
+    REJECTED:       { cls: "bg-red-50 text-red-700 border border-red-200", label: "Rejected", dot: "bg-red-500" },
 };
+
+function FilterPills({ options, value, onChange }: {
+    options: { label: string; value: string }[];
+    value: string;
+    onChange: (v: string) => void;
+}) {
+    return (
+        <div className="flex gap-1.5 flex-wrap">
+            {options.map((f) => (
+                <button
+                    key={f.value}
+                    type="button"
+                    onClick={() => onChange(f.value)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                        value === f.value
+                            ? "bg-[#0f172a] text-white"
+                            : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
+                    }`}
+                >
+                    {f.label}
+                </button>
+            ))}
+        </div>
+    );
+}
 
 export default function WalletPage() {
     const [tab, setTab] = useState<"transactions" | "topups">("transactions");
@@ -80,9 +98,13 @@ export default function WalletPage() {
 
     const fetchBalance = useCallback(async () => {
         try {
-            const res = await fetch(`${API_BASE}/wallet/balance`, { headers: getAuthHeaders() });
-            const data = await res.json();
-            if (res.ok && data.success) setBalance(data.data);
+            const data = await fetchJsonCached<any>(
+                "wallet-balance",
+                `${API_BASE}/wallet/balance`,
+                { headers: getAuthHeaders() },
+                15_000
+            );
+            if (data.success) setBalance(data.data);
         } finally {
             setBalanceLoading(false);
         }
@@ -93,9 +115,14 @@ export default function WalletPage() {
         try {
             const params = new URLSearchParams({ page: "1", limit: "50" });
             if (txnFilter !== "ALL") params.set("type", txnFilter);
-            const res = await fetch(`${API_BASE}/wallet/transactions?${params}`, { headers: getAuthHeaders() });
-            const data = await res.json();
-            if (res.ok && data.success) setTransactions(data.data?.items || data.data?.transactions || data.data || []);
+            const cacheKey = `wallet-txns-${txnFilter}`;
+            const data = await fetchJsonCached<any>(
+                cacheKey,
+                `${API_BASE}/wallet/transactions?${params}`,
+                { headers: getAuthHeaders() },
+                20_000
+            );
+            if (data.success) setTransactions(data.data?.items || data.data?.transactions || data.data || []);
         } finally {
             setTxnLoading(false);
         }
@@ -106,256 +133,286 @@ export default function WalletPage() {
         try {
             const params = new URLSearchParams({ page: "1", limit: "50" });
             if (topupFilter !== "ALL") params.set("status", topupFilter);
-            const res = await fetch(`${API_BASE}/wallet/topup-requests?${params}`, { headers: getAuthHeaders() });
-            const data = await res.json();
-            if (res.ok && data.success) setTopups(data.data?.items || data.data?.requests || data.data || []);
+            const cacheKey = `wallet-topups-${topupFilter}`;
+            const data = await fetchJsonCached<any>(
+                cacheKey,
+                `${API_BASE}/wallet/topup-requests?${params}`,
+                { headers: getAuthHeaders() },
+                20_000
+            );
+            if (data.success) setTopups(data.data?.items || data.data?.requests || data.data || []);
         } finally {
             setTopupLoading(false);
         }
     }, [topupFilter]);
 
-    useEffect(() => { fetchBalance(); }, [fetchBalance]);
+    useEffect(() => {
+        fetchBalance();
+        const id = setInterval(fetchBalance, 30_000);
+        return () => clearInterval(id);
+    }, [fetchBalance]);
+
     useEffect(() => { fetchTransactions(); }, [fetchTransactions]);
     useEffect(() => { fetchTopups(); }, [fetchTopups]);
 
+    const filteredTxns = transactions;
+    const filteredTopups = topups;
+
     return (
-        <div className="p-3 sm:p-6 md:p-10 max-w-5xl mx-auto">
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-7 gap-3 flex-wrap">
-                <div>
-                    <h1 className="text-[1.3rem] sm:text-[1.5rem] font-extrabold text-[#0f172a]">My Wallet</h1>
-                    <p className="text-[#64748b] text-[0.9rem] mt-1">
-                        View your balance, transactions, and top-up history.
-                    </p>
-                </div>
-                <Link href="/wallet/topup" className="btn-primary w-full sm:w-auto text-center">
-                    + Top Up Wallet
-                </Link>
-            </div>
-
-            {/* Balance Card */}
-            <div className="gradient-card rounded-2xl p-6 sm:p-8 mb-7 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div>
-                    <p className="text-white/70 text-[0.82rem] font-semibold tracking-widest uppercase mb-1">Available Balance</p>
-                    {balanceLoading ? (
-                        <div className="h-10 w-40 bg-white/20 rounded animate-pulse" />
-                    ) : (
-                        <p className="text-white text-[2rem] sm:text-[2.5rem] font-extrabold leading-none">
-                            {balance ? formatCurrency(balance.availableBalance) : "NPR 0.00"}
-                        </p>
-                    )}
-                    <p className="text-white/60 text-[0.78rem] mt-1">{balance?.currency || "NPR"} · Wallet Account</p>
-                </div>
-                <div className="text-white/50 text-[2.5rem] hidden sm:block">💳</div>
-            </div>
-
-            {/* Tabs */}
-            <div className="flex gap-1 bg-[#f1f5f9] rounded-xl p-1 mb-6 w-fit">
-                <button
-                    type="button"
-                    onClick={() => setTab("transactions")}
-                    className={`px-5 py-2 rounded-lg font-semibold text-[0.85rem] transition ${
-                        tab === "transactions"
-                            ? "bg-white text-[#1a56db] shadow-sm"
-                            : "text-[#64748b] hover:text-[#0f172a]"
-                    }`}
-                >
-                    Transactions
-                </button>
-                <button
-                    type="button"
-                    onClick={() => setTab("topups")}
-                    className={`px-5 py-2 rounded-lg font-semibold text-[0.85rem] transition ${
-                        tab === "topups"
-                            ? "bg-white text-[#1a56db] shadow-sm"
-                            : "text-[#64748b] hover:text-[#0f172a]"
-                    }`}
-                >
-                    Top-up Requests
-                </button>
-            </div>
-
-            {/* Transactions Tab */}
-            {tab === "transactions" && (
-                <>
-                    <div className="flex gap-2 mb-4 flex-wrap">
-                        {TXN_TYPE_FILTERS.map((f) => (
-                            <button
-                                key={f.value}
-                                type="button"
-                                onClick={() => setTxnFilter(f.value)}
-                                className={`py-1.5 px-4 rounded-[50px] font-semibold text-[0.8rem] cursor-pointer transition ${
-                                    txnFilter === f.value
-                                        ? "bg-gradient-to-r from-[#1a56db] to-[#2563eb] text-white border-none"
-                                        : "border-[1.5px] border-[#e2e8f0] bg-white text-[#475569] hover:bg-gray-50"
-                                }`}
-                            >
-                                {f.label}
-                            </button>
-                        ))}
+        <div className="min-h-[calc(100vh-68px)] bg-[#f8f7f4]">
+            {/* Hero header */}
+            <div className="relative overflow-hidden bg-[#0f172a] px-6 py-10 sm:py-12">
+                <div className="hero-grid-overlay pointer-events-none absolute inset-0" />
+                <div className="relative max-w-5xl mx-auto flex flex-col sm:flex-row sm:items-end justify-between gap-5">
+                    <div>
+                        <span className="inline-block mb-2 px-2.5 py-0.5 rounded-full bg-amber-400/10 border border-amber-400/20 text-amber-400 text-[0.68rem] font-bold tracking-[0.12em] uppercase">
+                            B2B Wallet
+                        </span>
+                        <h1 className="font-serif text-3xl sm:text-4xl font-black text-white leading-tight">My Wallet</h1>
+                        <p className="mt-1.5 text-slate-400 text-sm">Balance, transactions, and top-up history.</p>
                     </div>
 
-                    {txnLoading ? (
-                        <div className="bg-white rounded-2xl border border-[#e2e8f0] p-10 text-center text-[#94a3b8]">
-                            Loading transactions…
-                        </div>
-                    ) : transactions.length === 0 ? (
-                        <div className="bg-white rounded-2xl border border-[#e2e8f0] p-10 text-center text-[#94a3b8]">
-                            No transactions found.
-                        </div>
-                    ) : (
-                        <div className="bg-white rounded-2xl border border-[#e2e8f0] overflow-hidden">
-                            <div className="hidden sm:block overflow-x-auto">
-                                <table className="w-full border-collapse">
-                                    <thead>
-                                        <tr className="bg-[#f8fafc] border-b border-[#e2e8f0] text-[#64748b] text-left text-[0.75rem] uppercase tracking-[0.04em]">
-                                            <th className="p-4 font-bold">Date</th>
-                                            <th className="p-4 font-bold">Type</th>
-                                            <th className="p-4 font-bold">Source</th>
-                                            <th className="p-4 font-bold">Description</th>
-                                            <th className="p-4 font-bold text-right">Amount</th>
-                                            <th className="p-4 font-bold text-right">Balance After</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-[#e2e8f0]">
-                                        {transactions.map((txn) => (
-                                            <tr key={txn.id} className="hover:bg-[#f8fafc] transition-colors">
-                                                <td className="p-4 text-[#64748b] text-[0.82rem]">{formatDate(txn.createdAt)}</td>
-                                                <td className="p-4">
-                                                    <span className={`px-2.5 py-1 rounded-full text-[0.72rem] font-bold ${
-                                                        txn.type === "CREDIT"
-                                                            ? "bg-green-100 text-green-700"
-                                                            : "bg-red-100 text-red-700"
-                                                    }`}>
-                                                        {txn.type}
-                                                    </span>
-                                                </td>
-                                                <td className="p-4 text-[#475569] text-[0.82rem]">{txn.source}</td>
-                                                <td className="p-4 text-[#64748b] text-[0.82rem]">{txn.description || "—"}</td>
-                                                <td className={`p-4 text-right font-bold text-[0.88rem] ${
-                                                    txn.type === "CREDIT" ? "text-green-600" : "text-red-500"
-                                                }`}>
-                                                    {txn.type === "CREDIT" ? "+" : "−"}{formatCurrency(txn.amount)}
-                                                </td>
-                                                <td className="p-4 text-right text-[#0f172a] font-semibold text-[0.85rem]">
-                                                    {formatCurrency(txn.balanceAfter)}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                    {/* Balance card inside hero */}
+                    <div className="sm:text-right">
+                        <p className="text-[0.68rem] font-bold uppercase tracking-[0.1em] text-slate-400 mb-1">Available Balance</p>
+                        {balanceLoading ? (
+                            <div className="h-10 w-44 bg-white/10 rounded-lg animate-pulse" />
+                        ) : (
+                            <p className="text-3xl sm:text-4xl font-extrabold text-white leading-none">
+                                {balance ? formatCurrency(balance.availableBalance) : "NPR 0.00"}
+                            </p>
+                        )}
+                        <p className="text-slate-500 text-xs mt-1.5">{balance?.currency || "NPR"} · Wallet Account</p>
+                        <Link
+                            href="/wallet/topup"
+                            className="inline-flex items-center gap-1.5 mt-3 px-4 py-2 bg-amber-400 text-[#0f172a] text-sm font-bold rounded-lg hover:bg-amber-300 transition-colors"
+                        >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+                            Top Up
+                        </Link>
+                    </div>
+                </div>
+            </div>
 
-                            {/* Mobile cards */}
-                            <div className="sm:hidden divide-y divide-[#e2e8f0]">
-                                {transactions.map((txn) => (
-                                    <div key={txn.id} className="p-4 flex flex-col gap-1.5">
-                                        <div className="flex items-center justify-between">
-                                            <span className={`px-2.5 py-0.5 rounded-full text-[0.72rem] font-bold ${
-                                                txn.type === "CREDIT" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-                                            }`}>
-                                                {txn.type}
-                                            </span>
-                                            <span className={`font-bold text-[0.95rem] ${
-                                                txn.type === "CREDIT" ? "text-green-600" : "text-red-500"
-                                            }`}>
-                                                {txn.type === "CREDIT" ? "+" : "−"}{formatCurrency(txn.amount)}
-                                            </span>
-                                        </div>
-                                        <div className="text-[0.8rem] text-[#475569]">{txn.source}{txn.description ? ` · ${txn.description}` : ""}</div>
-                                        <div className="flex justify-between text-[0.75rem] text-[#94a3b8]">
-                                            <span>{formatDate(txn.createdAt)}</span>
-                                            <span>Bal: {formatCurrency(txn.balanceAfter)}</span>
+            <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
+                {/* Tabs */}
+                <div className="flex gap-1 bg-white border border-slate-100 rounded-xl p-1 mb-6 w-fit shadow-sm">
+                    {(["transactions", "topups"] as const).map((t) => (
+                        <button
+                            key={t}
+                            type="button"
+                            onClick={() => setTab(t)}
+                            className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
+                                tab === t
+                                    ? "bg-[#0f172a] text-white shadow-sm"
+                                    : "text-slate-500 hover:text-slate-800"
+                            }`}
+                        >
+                            {t === "transactions" ? "Transactions" : "Top-up Requests"}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Transactions Tab */}
+                {tab === "transactions" && (
+                    <>
+                        <div className="mb-4">
+                            <FilterPills options={TXN_TYPE_FILTERS} value={txnFilter} onChange={setTxnFilter} />
+                        </div>
+
+                        {txnLoading ? (
+                            <div className="space-y-2">
+                                {[1, 2, 3].map(i => (
+                                    <div key={i} className="bg-white rounded-xl border border-slate-100 p-4 animate-pulse">
+                                        <div className="flex justify-between">
+                                            <div className="space-y-2">
+                                                <div className="h-3 w-20 bg-slate-100 rounded" />
+                                                <div className="h-3 w-36 bg-slate-100 rounded" />
+                                            </div>
+                                            <div className="h-5 w-24 bg-slate-100 rounded" />
                                         </div>
                                     </div>
                                 ))}
                             </div>
-                        </div>
-                    )}
-                </>
-            )}
+                        ) : filteredTxns.length === 0 ? (
+                            <div className="bg-white rounded-2xl border border-slate-100 p-12 text-center">
+                                <div className="text-4xl mb-3">💳</div>
+                                <p className="font-semibold text-slate-700">No transactions yet</p>
+                                <p className="text-sm text-slate-400 mt-1">Your transaction history will appear here.</p>
+                            </div>
+                        ) : (
+                            <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm">
+                                {/* Desktop table */}
+                                <div className="hidden sm:block overflow-x-auto">
+                                    <table className="w-full border-collapse">
+                                        <thead>
+                                            <tr className="bg-slate-50 border-b border-slate-100 text-left">
+                                                <th className="px-5 py-3 text-[0.68rem] font-bold uppercase tracking-[0.08em] text-slate-400">Date</th>
+                                                <th className="px-5 py-3 text-[0.68rem] font-bold uppercase tracking-[0.08em] text-slate-400">Type</th>
+                                                <th className="px-5 py-3 text-[0.68rem] font-bold uppercase tracking-[0.08em] text-slate-400">Source</th>
+                                                <th className="px-5 py-3 text-[0.68rem] font-bold uppercase tracking-[0.08em] text-slate-400">Description</th>
+                                                <th className="px-5 py-3 text-[0.68rem] font-bold uppercase tracking-[0.08em] text-slate-400 text-right">Amount</th>
+                                                <th className="px-5 py-3 text-[0.68rem] font-bold uppercase tracking-[0.08em] text-slate-400 text-right">Balance After</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-50">
+                                            {filteredTxns.map((txn) => (
+                                                <tr key={txn.transactionId} className="hover:bg-slate-50/60 transition-colors">
+                                                    <td className="px-5 py-3.5 text-slate-500 text-xs">{formatDate(txn.createdAt)}</td>
+                                                    <td className="px-5 py-3.5">
+                                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[0.68rem] font-bold border ${
+                                                            txn.type === "CREDIT"
+                                                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                                                : "bg-red-50 text-red-700 border-red-200"
+                                                        }`}>
+                                                            {txn.type === "CREDIT" ? "↑" : "↓"} {txn.type}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-5 py-3.5 text-slate-600 text-xs font-medium">{txn.source}</td>
+                                                    <td className="px-5 py-3.5 text-slate-500 text-xs max-w-[200px] truncate">{txn.description || "—"}</td>
+                                                    <td className={`px-5 py-3.5 text-right font-bold text-sm ${
+                                                        txn.type === "CREDIT" ? "text-emerald-600" : "text-red-500"
+                                                    }`}>
+                                                        {txn.type === "CREDIT" ? "+" : "−"}{formatCurrency(txn.amount)}
+                                                    </td>
+                                                    <td className="px-5 py-3.5 text-right text-[#0f172a] font-bold text-sm">
+                                                        {formatCurrency(txn.balanceAfter)}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
 
-            {/* Top-up Requests Tab */}
-            {tab === "topups" && (
-                <>
-                    <div className="flex gap-2 mb-4 flex-wrap">
-                        {TOPUP_STATUS_FILTERS.map((f) => (
-                            <button
-                                key={f.value}
-                                type="button"
-                                onClick={() => setTopupFilter(f.value)}
-                                className={`py-1.5 px-4 rounded-[50px] font-semibold text-[0.8rem] cursor-pointer transition ${
-                                    topupFilter === f.value
-                                        ? "bg-gradient-to-r from-[#1a56db] to-[#2563eb] text-white border-none"
-                                        : "border-[1.5px] border-[#e2e8f0] bg-white text-[#475569] hover:bg-gray-50"
-                                }`}
-                            >
-                                {f.label}
-                            </button>
-                        ))}
-                    </div>
-
-                    {topupLoading ? (
-                        <div className="bg-white rounded-2xl border border-[#e2e8f0] p-10 text-center text-[#94a3b8]">
-                            Loading top-up requests…
-                        </div>
-                    ) : topups.length === 0 ? (
-                        <div className="bg-white rounded-2xl border border-[#e2e8f0] p-10 text-center">
-                            <p className="text-[#94a3b8] mb-4">No top-up requests yet.</p>
-                            <Link href="/wallet/topup" className="btn-primary inline-block">
-                                Submit your first top-up
-                            </Link>
-                        </div>
-                    ) : (
-                        <div className="flex flex-col gap-3">
-                            {topups.map((req) => {
-                                const { cls, label } = topupStatusBadge(req.status);
-                                return (
-                                    <div
-                                        key={req.id}
-                                        className="bg-white rounded-2xl border border-[#e2e8f0] p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-                                    >
-                                        <div className="flex flex-col gap-1">
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                                <span className={`px-2.5 py-0.5 rounded-full text-[0.72rem] font-bold ${cls}`}>
-                                                    {label}
-                                                </span>
-                                                <span className="text-[0.75rem] text-[#94a3b8]">{formatDate(req.createdAt)}</span>
-                                            </div>
-                                            <p className="text-[#0f172a] font-semibold text-[0.92rem] mt-1">
-                                                Submitted: {formatCurrency(req.submittedAmount)}
-                                                {req.approvedAmount != null && (
-                                                    <span className="ml-2 text-green-600 text-[0.85rem]">
-                                                        → Approved: {formatCurrency(req.approvedAmount)}
+                                {/* Mobile cards */}
+                                <div className="sm:hidden divide-y divide-slate-50">
+                                    {filteredTxns.map((txn) => (
+                                        <div key={txn.transactionId} className="px-4 py-3.5">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[0.68rem] font-bold border ${
+                                                        txn.type === "CREDIT"
+                                                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                                            : "bg-red-50 text-red-700 border-red-200"
+                                                    }`}>
+                                                        {txn.type === "CREDIT" ? "↑" : "↓"} {txn.type}
                                                     </span>
-                                                )}
-                                            </p>
-                                            <p className="text-[#64748b] text-[0.82rem]">
-                                                Method: {req.paymentMethod}
-                                                {req.transferReference && <> · Ref: <span className="font-mono">{req.transferReference}</span></>}
-                                            </p>
-                                            {req.note && (
-                                                <p className="text-[#94a3b8] text-[0.78rem]">{req.note}</p>
-                                            )}
-                                            {req.status === "REJECTED" && req.rejectionReason && (
-                                                <p className="text-red-500 text-[0.8rem] mt-1">
-                                                    Reason: {req.rejectionReason}
-                                                </p>
-                                            )}
-                                        </div>
-                                        {req.reviewedAt && (
-                                            <div className="text-right shrink-0">
-                                                <p className="text-[0.72rem] text-[#94a3b8]">Reviewed</p>
-                                                <p className="text-[0.8rem] text-[#64748b]">{formatDate(req.reviewedAt)}</p>
+                                                    <span className="text-xs text-slate-500 font-medium">{txn.source}</span>
+                                                </div>
+                                                <span className={`font-extrabold text-sm ${txn.type === "CREDIT" ? "text-emerald-600" : "text-red-500"}`}>
+                                                    {txn.type === "CREDIT" ? "+" : "−"}{formatCurrency(txn.amount)}
+                                                </span>
                                             </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
+                                            {txn.description && (
+                                                <p className="text-xs text-slate-400 mt-1 truncate">{txn.description}</p>
+                                            )}
+                                            <div className="flex justify-between mt-1.5 text-[0.68rem] text-slate-400">
+                                                <span>{formatDate(txn.createdAt)}</span>
+                                                <span className="font-semibold text-slate-600">Bal: {formatCurrency(txn.balanceAfter)}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </>
+                )}
+
+                {/* Top-up Requests Tab */}
+                {tab === "topups" && (
+                    <>
+                        <div className="mb-4">
+                            <FilterPills options={TOPUP_STATUS_FILTERS} value={topupFilter} onChange={setTopupFilter} />
                         </div>
-                    )}
-                </>
-            )}
+
+                        {topupLoading ? (
+                            <div className="space-y-2">
+                                {[1, 2].map(i => (
+                                    <div key={i} className="bg-white rounded-xl border border-slate-100 p-5 animate-pulse">
+                                        <div className="flex justify-between">
+                                            <div className="space-y-2">
+                                                <div className="h-4 w-24 bg-slate-100 rounded" />
+                                                <div className="h-3 w-48 bg-slate-100 rounded" />
+                                            </div>
+                                            <div className="h-6 w-20 bg-slate-100 rounded-lg" />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : filteredTopups.length === 0 ? (
+                            <div className="bg-white rounded-2xl border border-slate-100 p-12 text-center">
+                                <div className="text-4xl mb-3">🏦</div>
+                                <p className="font-semibold text-slate-700">No top-up requests yet</p>
+                                <p className="text-sm text-slate-400 mt-1 mb-4">Submit a payment proof to top up your wallet.</p>
+                                <Link href="/wallet/topup" className="inline-flex items-center gap-2 px-4 py-2 bg-[#0f172a] text-white text-sm font-semibold rounded-lg hover:bg-slate-800 transition-colors">
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+                                    Submit Top-up
+                                </Link>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col gap-3">
+                                {filteredTopups.map((req) => {
+                                    const cfg = TOPUP_STATUS_CONFIG[req.status] || { cls: "bg-slate-100 text-slate-600 border border-slate-200", label: req.status, dot: "bg-slate-400" };
+                                    return (
+                                        <div
+                                            key={req.requestId}
+                                            className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm"
+                                        >
+                                            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 flex-wrap mb-2">
+                                                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[0.72rem] font-bold ${cfg.cls}`}>
+                                                            <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+                                                            {cfg.label}
+                                                        </span>
+                                                        <span className="text-xs text-slate-400">{formatDate(req.submittedAt)}</span>
+                                                    </div>
+
+                                                    <div className="flex items-baseline gap-2 flex-wrap">
+                                                        <span className="font-extrabold text-[#0f172a] text-lg leading-none">
+                                                            {formatCurrency(req.submittedAmount)}
+                                                        </span>
+                                                        {req.approvedAmount != null && (
+                                                            <span className="text-emerald-600 font-semibold text-sm">
+                                                                → Approved: {formatCurrency(req.approvedAmount)}
+                                                            </span>
+                                                        )}
+                                                    </div>
+
+                                                    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-500">
+                                                        <span>Method: <strong className="text-slate-700">{req.paymentMethod}</strong></span>
+                                                        {req.transferReference && (
+                                                            <span>Ref: <span className="font-mono font-medium text-slate-700">{req.transferReference}</span></span>
+                                                        )}
+                                                    </div>
+
+                                                    {req.note && (
+                                                        <p className="mt-1.5 text-xs text-slate-400 italic">{req.note}</p>
+                                                    )}
+
+                                                    {req.status === "REJECTED" && req.rejectionReason && (
+                                                        <div className="mt-2 flex items-start gap-1.5 text-xs text-red-600">
+                                                            <svg className="w-3.5 h-3.5 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                                                            <span><strong>Reason:</strong> {req.rejectionReason}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {req.reviewedAt && (
+                                                    <div className="text-right shrink-0">
+                                                        <p className="text-[0.68rem] text-slate-400 uppercase tracking-wide font-semibold">Reviewed</p>
+                                                        <p className="text-xs text-slate-600 mt-0.5">{formatDate(req.reviewedAt)}</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </>
+                )}
+            </div>
         </div>
     );
 }

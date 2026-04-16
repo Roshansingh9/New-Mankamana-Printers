@@ -239,13 +239,32 @@ export const sendOrderStatusUpdate = async (opts: {
   variantName: string;
   newStatus: string;
   expectedDeliveryDate?: Date | null;
+  walletDeducted?: number;
+  walletBalanceAfter?: number;
 }) => {
-  const { to, businessName, orderId, productName, variantName, newStatus, expectedDeliveryDate } = opts;
+  const { to, businessName, orderId, productName, variantName, newStatus, expectedDeliveryDate, walletDeducted, walletBalanceAfter } = opts;
   const meta = ORDER_STATUS_META[newStatus] ?? { label: newStatus, icon: "•" };
 
   const deliveryRow = expectedDeliveryDate
     ? `<tr><td style="padding:7px 0;color:#64748b;font-size:13px;">Est. Delivery</td><td style="padding:7px 0;font-weight:700;color:#15803d;">${new Date(expectedDeliveryDate).toLocaleDateString("en-NP", { day: "numeric", month: "long", year: "numeric" })}</td></tr>`
     : "";
+
+  const walletBlock = (newStatus === "ORDER_PROCESSING" && walletDeducted !== undefined && walletBalanceAfter !== undefined)
+    ? `
+      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:20px;margin-bottom:28px;">
+        <p style="margin:0 0 12px;font-size:12px;color:#15803d;font-weight:700;text-transform:uppercase;letter-spacing:1px;">💳 Wallet Payment Summary</p>
+        <table style="width:100%;border-collapse:collapse;">
+          <tr>
+            <td style="padding:6px 0;color:#64748b;font-size:13px;width:160px;">Amount Deducted</td>
+            <td style="padding:6px 0;font-weight:700;color:#b91c1c;">− NPR ${walletDeducted.toLocaleString()}</td>
+          </tr>
+          <tr>
+            <td style="padding:6px 0;color:#64748b;font-size:13px;">Remaining Balance</td>
+            <td style="padding:6px 0;font-weight:700;color:#0061FF;">NPR ${walletBalanceAfter.toLocaleString()}</td>
+          </tr>
+        </table>
+      </div>
+    ` : "";
 
   const statusMessage: Record<string, string> = {
     ORDER_PROCESSING: "Our team has started working on your order.",
@@ -272,6 +291,8 @@ export const sendOrderStatusUpdate = async (opts: {
             ${statusBadge(newStatus)}
             ${statusMessage[newStatus] ? `<p style="margin:12px 0 0;color:#475569;font-size:14px;">${statusMessage[newStatus]}</p>` : ""}
           </div>
+
+          ${walletBlock}
 
           <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:24px;margin-bottom:28px;">
             <table style="width:100%;border-collapse:collapse;">
@@ -323,6 +344,114 @@ export const sendClientDeactivated = async (opts: {
           ` : ""}
           <p style="color: #94a3b8; font-size: 13px; margin: 0;">
             If you believe this is a mistake, please contact us at
+            <a href="mailto:${process.env.SMTP_EMAIL}" style="color: #0061FF;">${process.env.SMTP_EMAIL}</a>.
+          </p>
+        </div>
+        <div style="padding: 20px 40px; background: #f8fafc; border: 1px solid #e2e8f0; border-top: none; text-align: center;">
+          <p style="margin: 0; color: #94a3b8; font-size: 12px;">New Mankamana Printers &mdash; Professional Printing Services</p>
+        </div>
+      </div>
+    `,
+  });
+};
+
+// sendTopupApproved: Notifies a client their wallet top-up has been approved with the credited amount and new balance
+export const sendTopupApproved = async (opts: {
+  to: string;
+  businessName: string;
+  approvedAmount: number;
+  newBalance: number;
+  requestId: string;
+}) => {
+  const { to, businessName, approvedAmount, newBalance, requestId } = opts;
+
+  await transporter.sendMail({
+    from: FROM,
+    to,
+    subject: `Wallet Top-up Approved — NPR ${approvedAmount.toLocaleString()} Credited`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b;">
+        <div style="background: #0061FF; padding: 32px 40px;">
+          <h1 style="color: #ffffff; margin: 0; font-size: 22px; font-weight: 700;">New Mankamana Printers</h1>
+        </div>
+        <div style="padding: 40px; border: 1px solid #e2e8f0; border-top: none;">
+          <h2 style="font-size: 20px; margin: 0 0 8px;">Wallet Top-up Approved ✅</h2>
+          <p style="color: #64748b; margin: 0 0 8px;">Hi ${businessName},</p>
+          <p style="color: #64748b; margin: 0 0 28px;">
+            Your wallet top-up request has been reviewed and approved. Your account has been credited.
+          </p>
+          <div style="background: #f0fdf4; border: 2px solid #16a34a; border-radius: 8px; padding: 24px; text-align: center; margin-bottom: 28px;">
+            <p style="margin: 0 0 4px; color: #64748b; font-size: 13px;">Amount Credited</p>
+            <p style="margin: 0; font-size: 32px; font-weight: 800; color: #16a34a;">NPR ${approvedAmount.toLocaleString()}</p>
+          </div>
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 28px;">
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 13px; width: 160px;">New Wallet Balance</td>
+                <td style="padding: 8px 0; font-weight: 700; font-size: 16px; color: #0061FF;">NPR ${newBalance.toLocaleString()}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; color: #64748b; font-size: 13px;">Request ID</td>
+                <td style="padding: 8px 0; font-weight: 600; font-family: monospace; font-size: 12px;">${requestId}</td>
+              </tr>
+            </table>
+          </div>
+          <p style="color: #64748b; margin: 0 0 8px;">You can now use your wallet balance to place orders.</p>
+          <p style="color: #94a3b8; font-size: 13px; margin: 0;">
+            Questions? Contact us at <a href="mailto:${process.env.SMTP_EMAIL}" style="color: #0061FF;">${process.env.SMTP_EMAIL}</a>.
+          </p>
+        </div>
+        <div style="padding: 20px 40px; background: #f8fafc; border: 1px solid #e2e8f0; border-top: none; text-align: center;">
+          <p style="margin: 0; color: #94a3b8; font-size: 12px;">New Mankamana Printers &mdash; Professional Printing Services</p>
+        </div>
+      </div>
+    `,
+  });
+};
+
+// sendClientProfileUpdated: Notifies a client that admin has updated their account details
+export const sendClientProfileUpdated = async (opts: {
+  to: string;
+  ownerName: string;
+  businessName: string;
+  changes: Array<{ field: string; oldValue: string; newValue: string }>;
+}) => {
+  const { to, ownerName, businessName, changes } = opts;
+
+  const changesHtml = changes.map(({ field, oldValue, newValue }) => `
+    <tr>
+      <td style="padding:8px 0;color:#64748b;font-size:13px;width:140px;border-bottom:1px solid #f1f5f9;">${field}</td>
+      <td style="padding:8px 0;font-size:13px;border-bottom:1px solid #f1f5f9;">
+        <span style="color:#ef4444;text-decoration:line-through;">${oldValue}</span>
+        &nbsp;→&nbsp;
+        <span style="color:#16a34a;font-weight:600;">${newValue}</span>
+      </td>
+    </tr>
+  `).join("");
+
+  await transporter.sendMail({
+    from: FROM,
+    to,
+    subject: "Your New Mankamana Printers Account Details Have Been Updated",
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b;">
+        <div style="background: #0061FF; padding: 32px 40px;">
+          <h1 style="color: #ffffff; margin: 0; font-size: 22px; font-weight: 700;">New Mankamana Printers</h1>
+        </div>
+        <div style="padding: 40px; border: 1px solid #e2e8f0; border-top: none;">
+          <h2 style="font-size: 20px; margin: 0 0 8px;">Account Details Updated</h2>
+          <p style="color: #64748b; margin: 0 0 8px;">Hi ${ownerName},</p>
+          <p style="color: #64748b; margin: 0 0 28px;">
+            The following details on your <strong>${businessName}</strong> account have been updated by the admin.
+          </p>
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 24px; margin-bottom: 28px;">
+            <table style="width: 100%; border-collapse: collapse;">
+              ${changesHtml}
+            </table>
+          </div>
+          <p style="color: #64748b; margin: 0 0 8px;">If you did not expect these changes or believe this was made in error, please contact us immediately.</p>
+          <p style="color: #94a3b8; font-size: 13px; margin: 0;">
+            Questions? Contact us at
             <a href="mailto:${process.env.SMTP_EMAIL}" style="color: #0061FF;">${process.env.SMTP_EMAIL}</a>.
           </p>
         </div>

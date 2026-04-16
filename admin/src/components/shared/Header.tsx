@@ -1,11 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bell, ChevronDown, Moon, Search, Sun } from "lucide-react";
+import { Bell, ChevronDown, Menu, Moon, Search, Sun } from "lucide-react";
 import { useTheme } from "@/components/shared/theme-provider";
 import { cachedJsonFetch, invalidateCacheKey } from "@/lib/requestCache";
 
-export function Header() {
+interface HeaderProps {
+  onMenuToggle?: () => void;
+}
+
+export function Header({ onMenuToggle }: HeaderProps) {
   const { theme, setTheme } = useTheme();
   const [pendingCount, setPendingCount] = useState(0);
 
@@ -41,6 +45,16 @@ export function Header() {
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-6 dark:border-slate-800 dark:bg-slate-900">
+      {/* Mobile hamburger */}
+      <button
+        type="button"
+        onClick={onMenuToggle}
+        className="mr-2 rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200 lg:hidden"
+        aria-label="Toggle sidebar"
+      >
+        <Menu className="h-5 w-5" />
+      </button>
+
       {/* Search */}
       <div className="flex w-full max-w-sm items-center">
         <div className="relative w-full">

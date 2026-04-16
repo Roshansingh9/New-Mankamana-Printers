@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { protect, restrictTo } from "../../middleware/auth.middleware";
-import { getPaymentDetails } from "../../controller/wallet/payment-details.controller";
+import { getPaymentDetails, getQrImage } from "../../controller/wallet/payment-details.controller";
 import { getWalletBalance, validateCheckout } from "../../controller/wallet/wallet-account.controller";
 import { submitTopupRequest, getMyTopupRequests, getMyTopupRequestById } from "../../controller/wallet/topup-request.controller";
 import { getWalletTransactions, confirmWalletPayment } from "../../controller/wallet/wallet-transaction.controller";
@@ -34,7 +34,11 @@ const upload = multer({
   },
 });
 
-// All client wallet routes require CLIENT auth
+// Public: QR image proxy — no auth required; image is publicly visible to all users
+// Must be declared BEFORE the protect middleware so unauthenticated browsers can load it
+router.get("/qr-image", getQrImage);
+
+// All other client wallet routes require CLIENT auth
 router.use(protect, restrictTo("CLIENT"));
 
 // Payment details: View platform bank details to make a transfer

@@ -5,6 +5,8 @@ type RedisClient = ReturnType<typeof createClient>;
 let redisClient: RedisClient | null = null;
 let connectPromise: Promise<RedisClient | null> | null = null;
 let warnedUnavailable = false;
+// Once Redis has permanently failed to connect we stop retrying for the process lifetime
+let permanentlyDisabled = false;
 
 const isRedisEnabled = () => {
   const disabled = process.env.REDIS_DISABLED === "true";
@@ -20,7 +22,7 @@ const warnUnavailable = (message: string, error?: unknown) => {
 };
 
 const getRedisClient = async (): Promise<RedisClient | null> => {
-  if (!isRedisEnabled()) {
+  if (!isRedisEnabled() || permanentlyDisabled) {
     return null;
   }
 
@@ -33,7 +35,19 @@ const getRedisClient = async (): Promise<RedisClient | null> => {
   }
 
   const url = process.env.REDIS_URL as string;
-  const client = createClient({ url });
+  const client = createClient({
+    url,
+    socket: {
+      // Fail fast: if Redis isn't reachable within 2s don't block every request
+      connectTimeout: 2000,
+      // Disable reconnect retries entirely — give up after the first timeout so
+      // a single 2s wait is the worst-case cost on cold start, not 3×2s = 6s+
+      reconnectStrategy: () => {
+        permanentlyDisabled = true;
+        return new Error("Redis unreachable — disabling permanently");
+      },
+    },
+  });
   client.on("error", (error) => {
     warnUnavailable("Redis client error. Falling back to in-memory cache.", error);
   });
@@ -46,7 +60,8 @@ const getRedisClient = async (): Promise<RedisClient | null> => {
       return redisClient;
     })
     .catch((error) => {
-      warnUnavailable("Unable to connect to Redis. Falling back to in-memory cache.", error);
+      permanentlyDisabled = true;
+      warnUnavailable("Unable to connect to Redis. Falling back to in-memory cache permanently for this session.", error);
       return null;
     })
     .finally(() => {

@@ -17,7 +17,7 @@ import {
   rejectTopupSchema,
   adjustTopupSchema,
 } from "../../validators/wallet.validator";
-import { uploadToSupabase } from "../../utils/file-upload";
+import { uploadToSupabase, downloadFromSupabase } from "../../utils/file-upload";
 import { withRequestDedupe } from "../../utils/request-dedupe";
 
 // submitTopupRequest: Allows a client to submit a proof-of-payment (file) for balance top-up approval
@@ -45,7 +45,7 @@ export const submitTopupRequest = async (req: Request, res: Response) => {
     const request = await submitTopupService({
       clientId,
       submittedAmount: validated.data.amount,
-      paymentMethod: validated.data.paymentMethod,
+      paymentMethod: validated.data.paymentMethod as "BANK_TRANSFER",
       transferReference: validated.data.transferReference,
       note: validated.data.note,
       proofFilePath: proofUrl,
@@ -303,5 +303,26 @@ export const adjustApprovedTopupRequest = async (req: Request, res: Response) =>
   } catch (error: any) {
     console.error("Error adjusting topup:", error);
     return res.status(400).json({ success: false, message: error.message || "Adjustment failed" });
+  }
+};
+
+// getTopupProof: Admin proxy that downloads the payment proof from Supabase and streams it to the browser
+export const getTopupProof = async (req: Request, res: Response) => {
+  try {
+    const requestId = req.params.requestId as string;
+    const request = await getAdminTopupByIdService(requestId);
+    if (!request?.proofFilePath) return res.status(404).end();
+
+    const proofPath = request.proofFilePath;
+    if (proofPath.startsWith("http")) return res.redirect(302, proofPath);
+
+    const { buffer, mimeType } = await downloadFromSupabase(proofPath);
+    res.setHeader("Content-Type", mimeType);
+    res.setHeader("Content-Disposition", `inline; filename="${request.proofFileName || "proof"}"`);
+    res.setHeader("Cache-Control", "private, max-age=60");
+    return res.send(buffer);
+  } catch (error) {
+    console.error("Error proxying topup proof:", error);
+    return res.status(500).end();
   }
 };

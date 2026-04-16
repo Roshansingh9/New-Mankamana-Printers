@@ -3,7 +3,7 @@ import { ApiError } from "../../utils/api-error";
 import { withCache } from "../../utils/cache";
 import { invalidateCatalogPricingForVariant } from "./catalog-cache.service";
 import {
-  getVariantPricingCombination,
+  buildCombinationKey,
   normalizeSelectedOptions,
 } from "./product-pricing.service";
 
@@ -149,7 +149,9 @@ export const listActiveVariantsByProductService = async (productId: string) => {
   });
 };
 
-// listVariantOptionsService: Builds the option group tree for an active product variant
+// listVariantOptionsService: Builds the option group tree for an active product variant.
+// Also returns all active pricing rows so the client can compute prices locally
+// without a separate API round-trip.
 export const listVariantOptionsService = async (variantId: string) => {
   return withCache(`catalog:variant-options:${variantId}`, 60_000, async () => {
     const variant = await prisma.productVariant.findFirst({
@@ -168,35 +170,40 @@ export const listVariantOptionsService = async (variantId: string) => {
       throw new ApiError("Variant not found.", 404, "VARIANT_NOT_FOUND");
     }
 
-    const optionGroups = await prisma.optionGroup.findMany({
-      where: {
-        variant_id: variantId,
-      },
-      select: {
-        id: true,
-        name: true,
-        label: true,
-        display_order: true,
-        is_required: true,
-        values: {
-          where: {
-            is_active: true,
-          },
-          select: {
-            id: true,
-            code: true,
-            label: true,
-            display_order: true,
-          },
-          orderBy: {
-            display_order: "asc",
+    // Fetch option groups AND pricing rows in parallel
+    const [optionGroups, pricingRows] = await Promise.all([
+      prisma.optionGroup.findMany({
+        where: { variant_id: variantId },
+        select: {
+          id: true,
+          name: true,
+          label: true,
+          display_order: true,
+          is_required: true,
+          is_pricing_dimension: true,
+          values: {
+            where: { is_active: true },
+            select: {
+              id: true,
+              code: true,
+              label: true,
+              display_order: true,
+            },
+            orderBy: { display_order: "asc" },
           },
         },
-      },
-      orderBy: {
-        display_order: "asc",
-      },
-    });
+        orderBy: { display_order: "asc" },
+      }),
+      prisma.variantPricing.findMany({
+        where: { variant_id: variantId, is_active: true },
+        select: {
+          combination_key: true,
+          price: true,
+          discount_type: true,
+          discount_value: true,
+        },
+      }),
+    ]);
 
     return {
       variant_id: variant.id,
@@ -208,6 +215,7 @@ export const listVariantOptionsService = async (variantId: string) => {
         label: group.label,
         display_order: Number(group.display_order),
         is_required: group.is_required,
+        is_pricing_dimension: group.is_pricing_dimension,
         values: group.values.map((value) => ({
           id: value.id,
           code: value.code,
@@ -215,6 +223,26 @@ export const listVariantOptionsService = async (variantId: string) => {
           display_order: Number(value.display_order),
         })),
       })),
+      // All active pricing rows for this variant, keyed by combination_key.
+      // combination_key is a sorted JSON string of pricing-dimension option codes.
+      // The client can build the same key and look up prices locally.
+      pricing_rows: pricingRows.map((row) => {
+        const price = Number(row.price);
+        const dv = Number(row.discount_value ?? 0);
+        let discountAmount = 0;
+        if (row.discount_type === "fixed") {
+          discountAmount = dv;
+        } else if (row.discount_type === "percentage") {
+          discountAmount = Number((price * dv / 100).toFixed(2));
+        }
+        return {
+          combination_key: row.combination_key as string,
+          price,
+          discount: discountAmount,
+          discount_type: row.discount_type ?? null,
+          discount_value: dv,
+        };
+      }),
     };
   });
 };
@@ -233,7 +261,7 @@ export const calculateCatalogPricingService = async (input: {
 
   return withCache(
     `catalog:pricing:${input.variant_id}:${input.quantity}:${optionsKey}`,
-    15_000,
+    60_000,
     async () => {
       const [variant, groups] = await Promise.all([
         prisma.productVariant.findFirst({
@@ -255,6 +283,7 @@ export const calculateCatalogPricingService = async (input: {
             name: true,
             label: true,
             is_required: true,
+            is_pricing_dimension: true,
             values: {
               where: {
                 is_active: true,
@@ -320,7 +349,22 @@ export const calculateCatalogPricingService = async (input: {
         }
       }
 
-      const pricingRow = await getVariantPricingCombination(variant.id, normalizedSelectedOptions);
+      const pricingDimensionNames = new Set(
+        groups
+          .filter((group) => group.is_pricing_dimension)
+          .map((group) => group.name)
+      );
+      const pricingOptions = Object.fromEntries(
+        Object.entries(normalizedSelectedOptions).filter(([key]) => pricingDimensionNames.has(key))
+      );
+      const combinationKey = buildCombinationKey(pricingOptions);
+      const pricingRow = await prisma.variantPricing.findFirst({
+        where: {
+          variant_id: variant.id,
+          combination_key: combinationKey,
+          is_active: true,
+        },
+      });
 
       if (!pricingRow) {
         throw new ApiError("This combination is currently unavailable.", 422, "PRICING_COMBINATION_NOT_FOUND");

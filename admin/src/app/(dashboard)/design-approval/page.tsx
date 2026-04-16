@@ -77,6 +77,9 @@ export default function DesignApprovalPage() {
   const [isRejectOpen, setIsRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
+  const [isApproveOpen, setIsApproveOpen] = useState(false);
+  const [approveTargetId, setApproveTargetId] = useState<string | null>(null);
+  const [extraPrice, setExtraPrice] = useState("");
 
   const loadDesigns = async () => {
     setIsLoading(true);
@@ -100,11 +103,17 @@ export default function DesignApprovalPage() {
     loadDesigns();
   }, []);
 
-  const handleApprove = async (id: string) => {
+  const openApproveDialog = (id: string) => {
+    setApproveTargetId(id);
+    setExtraPrice("");
+    setIsApproveOpen(true);
+  };
+
+  const handleApprove = async (id: string, extra?: number) => {
     // Optimistically disable the button before the async call
     setActionId(id);
     try {
-      await approveDesignSubmission(id);
+      await approveDesignSubmission(id, undefined, extra);
       // Optimistically mark as Approved in local state immediately, then refresh
       setDesigns((prev) =>
         prev.map((d) => (d.id === id ? { ...d, status: "Approved" } : d))
@@ -116,6 +125,7 @@ export default function DesignApprovalPage() {
         variant: "success",
       });
       setIsViewOpen(false);
+      setIsApproveOpen(false);
       window.dispatchEvent(new Event("stats-updated"));
     } catch (error) {
       const message =
@@ -373,7 +383,7 @@ export default function DesignApprovalPage() {
                         type="button"
                         size="sm"
                         className="flex-1 gap-1.5 bg-emerald-600 hover:bg-emerald-700"
-                        onClick={() => handleApprove(design.id)}
+                        onClick={() => openApproveDialog(design.id)}
                         disabled={actionId !== null}
                       >
                         <Check className="h-3.5 w-3.5" />
@@ -496,15 +506,63 @@ export default function DesignApprovalPage() {
                 <Button
                   type="button"
                   className="gap-2 bg-emerald-600 hover:bg-emerald-700"
-                  onClick={() => selectedDesign && handleApprove(selectedDesign.id)}
+                  onClick={() => selectedDesign && openApproveDialog(selectedDesign.id)}
                   disabled={actionId !== null}
                 >
                   <Check className="h-4 w-4" />
-                  {actionId === selectedDesign?.id ? "Approving..." : "Approve Design"}
+                  Approve Design
                 </Button>
               </>
             )}
             </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Approve Dialog — with optional extra price surcharge */}
+      <Dialog open={isApproveOpen} onOpenChange={setIsApproveOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Approve Design</DialogTitle>
+            <DialogDescription>
+              Optionally set a per-unit extra price surcharge for orders using this design. Leave blank or 0 for no surcharge.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="extra-price">Extra Price per Unit (NPR)</Label>
+            <input
+              id="extra-price"
+              type="number"
+              min="0"
+              step="1"
+              value={extraPrice}
+              onChange={(e) => setExtraPrice(e.target.value)}
+              placeholder="e.g. 500 (leave blank for 0)"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition-all focus:border-emerald-400 focus:ring-2 focus:ring-emerald-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+            />
+            {extraPrice && Number(extraPrice) > 0 && (
+              <p className="text-xs text-slate-500">
+                NPR {Number(extraPrice).toLocaleString()} will be added per unit to any order using this design.
+              </p>
+            )}
+          </div>
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button type="button" variant="outline" onClick={() => setIsApproveOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="gap-2 bg-emerald-600 hover:bg-emerald-700"
+              onClick={() => {
+                if (!approveTargetId) return;
+                const extra = extraPrice && Number(extraPrice) > 0 ? Number(extraPrice) : 0;
+                handleApprove(approveTargetId, extra);
+              }}
+              disabled={actionId !== null}
+            >
+              <Check className="h-4 w-4" />
+              {actionId === approveTargetId ? "Approving..." : "Confirm Approval"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

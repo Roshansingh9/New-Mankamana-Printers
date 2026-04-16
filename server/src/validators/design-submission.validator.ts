@@ -23,9 +23,10 @@ export const adminDesignSubmissionQuerySchema = z.object({
   sort: z.enum(["submittedAt.desc", "submittedAt.asc"]).optional().default("submittedAt.desc"),
 });
 
-// adminApproveSubmissionSchema: Allows admin to add a final approval note
+// adminApproveSubmissionSchema: Allows admin to add a final approval note and an optional extra price surcharge
 export const adminApproveSubmissionSchema = z.object({
   note: z.string().max(500).optional(),
+  extraPrice: z.number().min(0).optional().default(0),
 });
 
 // adminRejectSubmissionSchema: Requires a clear feedback message for the client upon rejection

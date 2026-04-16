@@ -14,14 +14,21 @@ import {
   LogOut,
   Users,
   BadgeDollarSign,
+  X,
 } from "lucide-react";
 import { cachedJsonFetch, invalidateCacheKey } from "@/lib/requestCache";
 
-export function Sidebar() {
+interface SidebarProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+}
+
+export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [pendingRegistrations, setPendingRegistrations] = useState(0);
   const [pendingDesigns, setPendingDesigns] = useState(0);
+  const [pendingOrders, setPendingOrders] = useState(0);
 
   useEffect(() => {
     const fetchCounts = async () => {
@@ -31,6 +38,7 @@ export function Sidebar() {
         if (d) {
           setPendingRegistrations(d.pending_registrations || 0);
           setPendingDesigns(d.pending_designs || 0);
+          setPendingOrders(d.pending_orders || 0);
         }
       } catch {
         // non-blocking
@@ -39,13 +47,11 @@ export function Sidebar() {
     fetchCounts();
     const interval = setInterval(fetchCounts, 15000);
 
-    // Refresh immediately when an action resolves a notification
     const refreshNow = () => {
       invalidateCacheKey("dashboard-stats");
       void fetchCounts();
     };
     window.addEventListener("stats-updated", refreshNow);
-    // Refresh when the tab regains focus
     const onVisible = () => { if (!document.hidden) fetchCounts(); };
     document.addEventListener("visibilitychange", onVisible);
 
@@ -56,6 +62,11 @@ export function Sidebar() {
     };
   }, []);
 
+  // Close sidebar on route change (mobile)
+  useEffect(() => {
+    onClose?.();
+  }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const navSections = [
     {
       label: "Operations",
@@ -65,7 +76,7 @@ export function Sidebar() {
         { title: "Clients", href: "/clients", icon: Users, badge: 0 },
         { title: "Designs", href: "/design-approval", icon: CheckCircle, badge: pendingDesigns },
         { title: "Wallet", href: "/payments", icon: Wallet, badge: 0 },
-        { title: "Orders", href: "/orders", icon: Package, badge: 0 },
+        { title: "Orders", href: "/orders", icon: Package, badge: pendingOrders },
       ],
     },
     {
@@ -83,8 +94,20 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="relative flex h-screen w-64 flex-col border-r border-slate-800/80 bg-gradient-to-b from-[#111827] via-[#0f172a] to-[#0b1220] text-white">
+    <aside
+      className={cn(
+        // Base styles shared between mobile and desktop
+        "flex h-screen w-64 shrink-0 flex-col border-r border-slate-800/80 bg-gradient-to-b from-[#111827] via-[#0f172a] to-[#0b1220] text-white",
+        // Mobile: fixed drawer with slide transition
+        "fixed inset-y-0 left-0 z-40 transition-transform duration-300 ease-in-out",
+        isOpen ? "translate-x-0" : "-translate-x-full",
+        // Desktop: static position, always visible, no transform
+        "lg:relative lg:z-auto lg:translate-x-0 lg:transition-none"
+      )}
+    >
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_0%_0%,rgba(0,97,255,0.22),transparent_38%)]" />
+
+      {/* Header row: logo + mobile close button */}
       <div className="relative flex items-center gap-3 p-6">
         <Image
           src="/main-logo.png"
@@ -93,12 +116,19 @@ export function Sidebar() {
           height={40}
           className="object-contain"
         />
-        <div>
+        <div className="flex-1 min-w-0">
           <h1 className="text-sm font-bold tracking-tight">MANAKAMANA</h1>
-          <p className="text-[10px] uppercase tracking-wider text-slate-400">
-            Admin Portal
-          </p>
+          <p className="text-[10px] uppercase tracking-wider text-slate-400">Admin Portal</p>
         </div>
+        {/* Close button — mobile only */}
+        <button
+          type="button"
+          onClick={onClose}
+          className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white transition-colors lg:hidden"
+          aria-label="Close sidebar"
+        >
+          <X className="h-4 w-4" />
+        </button>
       </div>
 
       <nav className="sidebar-scroll relative flex-1 min-h-0 overflow-y-auto space-y-6 px-4 pb-6">

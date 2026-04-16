@@ -1,5 +1,5 @@
 import prisma from "../../connect";
-import { getOrCreateWalletService } from "./wallet-account.service";
+import { getOrCreateWalletService, invalidateBalanceCache } from "./wallet-account.service";
 
 // getClientTransactionsService: Paginated retrieval of the authenticated client's financial transaction history
 export const getClientTransactionsService = async (params: {
@@ -182,5 +182,8 @@ export const deductForOrderService = async (orderId: string, clientId: string) =
       deductedAmount: orderAmount,
       newWalletBalance: newBalance,
     };
+  }).then((result) => {
+    void invalidateBalanceCache(clientId);
+    return result;
   });
 };

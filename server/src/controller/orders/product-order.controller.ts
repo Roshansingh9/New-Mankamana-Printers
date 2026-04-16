@@ -1,8 +1,19 @@
 import { Request, Response } from "express";
 import * as orderService from "../../services/orders/product-order.service";
 import { createProductOrderSchema, updateOrderStatusSchema, setDeliveryDateSchema } from "../../validators/order.validator";
-import { uploadToSupabase } from "../../utils/file-upload";
+import { uploadToSupabase, downloadFromSupabase } from "../../utils/file-upload";
 import { withRequestDedupe } from "../../utils/request-dedupe";
+
+// Converts raw Prisma Decimal fields to numbers for any single order object
+// returned by service calls that don't go through serializeOrder() in the service layer.
+const toApiOrder = (order: any) => ({
+  ...order,
+  unit_price: Number(order.unit_price),
+  total_amount: Number(order.total_amount),
+  discount_value: Number(order.discount_value ?? 0),
+  discount_amount: Number(order.discount_amount ?? 0),
+  final_amount: Number(order.final_amount),
+});
 
 // createProductOrder: Handles the placement of a new order by a client, with optional payment proof upload
 export const createProductOrder = async (req: Request, res: Response) => {
@@ -55,7 +66,7 @@ export const createProductOrder = async (req: Request, res: Response) => {
       paymentProofFileSize,
     });
 
-    res.status(201).json({ success: true, message: "Order placed successfully", data: order });
+    res.status(201).json({ success: true, message: "Order placed successfully", data: toApiOrder(order) });
   } catch (error: any) {
     res.status(400).json({ success: false, message: error.message || "Internal server error" });
   }
@@ -92,7 +103,8 @@ export const getOrderDetails = async (req: Request, res: Response) => {
     if (currentUser.role === "CLIENT" && order.user_id !== currentUser.id) {
       return res.status(404).json({ success: false, message: "Order not found" });
     }
-    res.status(200).json({ success: true, data: order });
+    const apiOrder = toApiOrder(order);
+    res.status(200).json({ success: true, data: apiOrder });
   } catch (error) {
     res.status(500).json({ success: false, message: "Internal server error" });
   }
@@ -121,7 +133,7 @@ export const updateOrderStatus = async (req: Request, res: Response) => {
     res.status(200).json({
       success: true,
       message: result.noOp ? result.message : "Order status updated successfully",
-      data: result.order,
+      data: toApiOrder(result.order),
       noOp: result.noOp,
     });
   } catch (error: any) {
@@ -148,7 +160,7 @@ export const cancelMyOrder = async (req: Request, res: Response) => {
     return res.status(200).json({
       success: true,
       message: result.noOp ? result.message : "Order cancelled successfully",
-      data: result.order,
+      data: toApiOrder(result.order),
       noOp: result.noOp,
     });
   } catch (error: any) {
@@ -165,8 +177,29 @@ export const setOrderDeliveryDate = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: "Validation failed", errors: validated.error.issues });
     }
     const order = await orderService.setOrderDeliveryDateService(orderId as string, validated.data.expected_delivery_date);
-    res.status(200).json({ success: true, message: "Expected delivery date updated", data: order });
+    res.status(200).json({ success: true, message: "Expected delivery date updated", data: toApiOrder(order) });
   } catch (error: any) {
     res.status(400).json({ success: false, message: error.message || "Internal server error" });
+  }
+};
+
+// getOrderPaymentProof: Admin proxy that downloads the payment proof from Supabase and streams it to the browser
+export const getOrderPaymentProof = async (req: Request, res: Response) => {
+  try {
+    const { orderId } = req.params;
+    const order = await orderService.getOrderDetailsService(orderId);
+    if (!order?.payment_proof_url) return res.status(404).end();
+
+    const proofPath = order.payment_proof_url;
+    if (proofPath.startsWith("http")) return res.redirect(302, proofPath);
+
+    const { buffer, mimeType } = await downloadFromSupabase(proofPath);
+    res.setHeader("Content-Type", mimeType);
+    res.setHeader("Content-Disposition", `inline; filename="${order.payment_proof_file_name || "proof"}"`);
+    res.setHeader("Cache-Control", "private, max-age=60");
+    return res.send(buffer);
+  } catch (error) {
+    console.error("Error proxying order payment proof:", error);
+    return res.status(500).end();
   }
 };

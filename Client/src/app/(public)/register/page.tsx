@@ -74,7 +74,7 @@ export default function RegisterPage() {
                 }),
             });
             const json = await res.json();
-            if (!res.ok) throw new Error(json.message || "Submission failed");
+            if (!res.ok) throw new Error(json.error?.message || json.message || "Submission failed");
             setSubmitted(true);
         } catch (err: any) {
             notify.error(err.message || "Failed to submit registration. Please try again.");

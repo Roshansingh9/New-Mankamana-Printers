@@ -127,7 +127,8 @@ export const getAdminSubmissionByIdService = async (submissionId: string) => {
 export const approveSubmissionService = async (
   submissionId: string,
   adminId: string,
-  note?: string
+  note?: string,
+  extraPrice?: number
 ) => {
   // Pre-flight check and email data fetch before transaction
   const submissionWithClient = await prisma.designSubmission.findUnique({
@@ -171,6 +172,7 @@ export const approveSubmissionService = async (
           approvedBy_id: adminId,
           // Copy productId from submission so we can filter by product in checkout
           productId: (submission as any).productId ?? null,
+          extraPrice: extraPrice ?? 0,
           status: "ACTIVE",
         },
       });

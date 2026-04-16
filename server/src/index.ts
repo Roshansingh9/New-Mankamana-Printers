@@ -13,6 +13,8 @@ import designSubmissionRoutes from "./routes/design/design-submission.routes";
 import designRoutes from "./routes/design/design.routes";
 import productOrderRoutes from "./routes/orders/product-order.routes";
 import { sweepStalePlacedOrders } from "./services/orders/product-order.service";
+import prisma from "./connect";
+import { preWarmCatalogCache } from "./utils/cache-warmup";
 import clientWalletRoutes from "./routes/wallet/client-wallet.routes";
 import adminWalletRoutes from "./routes/wallet/admin-wallet.routes";
 import { globalErrorHandler } from "./middleware/error.middleware";
@@ -36,7 +38,17 @@ assertValidEnv();
 assertRegionConsistency();
 
 // ── Security headers
-app.use(helmet());
+// crossOriginResourcePolicy: Helmet defaults to "same-origin" which blocks browsers
+// from loading any resource (images, fonts, etc.) served by this API from a different
+// origin (e.g. frontend on localhost:3000/3001 or Vercel loading from the API domain).
+// "cross-origin" is the correct setting for an API server that intentionally serves
+// resources to multiple frontend origins — CORS already controls which origins can
+// make requests; CORP would only duplicate that restriction while breaking img/font loads.
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  })
+);
 
 // ── CORS: whitelist known origins only
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:3000,http://localhost:3001")
@@ -130,6 +142,13 @@ app.use(globalErrorHandler);
 if (process.env.VERCEL !== "1") {
   app.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
+    // Pre-warm DB connection pool then immediately warm catalog cache
+    prisma.$queryRaw`SELECT 1`
+      .then(() => {
+        console.log("[DB] Connection pool warmed up");
+        return preWarmCatalogCache();
+      })
+      .catch(() => {}); // non-fatal
     sweepStalePlacedOrders().catch((err) =>
       console.error("[AutoTransition] Startup sweep failed:", err)
     );
