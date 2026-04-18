@@ -34,6 +34,7 @@ import {
   CalendarDays,
 } from "lucide-react";
 import { cachedJsonFetch, invalidateCacheKey } from "@/lib/requestCache";
+import * as XLSX from "xlsx";
 
 type OrderStatus = "ORDER_PLACED" | "ORDER_PROCESSING" | "ORDER_PREPARED" | "ORDER_DISPATCHED" | "ORDER_DELIVERED" | "ORDER_CANCELLED";
 
@@ -135,33 +136,53 @@ export default function DashboardPage() {
         return;
       }
 
-      // Build CSV
-      const headers = ["Order ID", "Client", "Product", "Variant", "Status", "Amount (NPR)", "Date"];
-      const rows = monthOrders.map((o) => [
-        o.id,
-        o.client?.business_name ?? "",
-        o.variant?.product?.name ?? "",
-        o.variant?.variant_name ?? "",
-        STATUS_LABELS[o.status] ?? o.status,
-        o.final_amount.toFixed(2),
-        new Date(o.created_at).toLocaleDateString("en-NP"),
-      ]);
+      const fmtDate = (d: string) =>
+        new Date(d).toLocaleString("en-NP", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
-      const csvContent = [headers, ...rows]
-        .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
-        .join("\n");
+      const toRow = (o: RecentOrder) => ({
+        "Order ID": o.id.slice(0, 8).toUpperCase(),
+        "Client": o.client?.business_name ?? "",
+        "Product": o.variant?.product?.name ?? "",
+        "Variant": o.variant?.variant_name ?? "",
+        "Quantity": (o as any).quantity ?? "",
+        "Amount (NPR)": Number(o.final_amount).toFixed(2),
+        "Payment": (o as any).payment_status ?? "",
+        "Order Date": fmtDate(o.created_at),
+      });
 
-      const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `monthly-report-${year}-${String(month + 1).padStart(2, "0")}.csv`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      // Sheet 1: Only fully delivered orders (money credited)
+      const deliveredOrders = monthOrders.filter((o) => o.status === "ORDER_DELIVERED");
 
-      toast({ title: "Report Exported", description: `${monthOrders.length} orders exported to CSV.` });
+      // Sheet 2: All accepted orders — excludes cancelled and placed (not yet accepted)
+      const acceptedOrders = monthOrders.filter(
+        (o) => o.status !== "ORDER_CANCELLED" && o.status !== "ORDER_PLACED"
+      );
+
+      const wb = XLSX.utils.book_new();
+
+      const ws1 = XLSX.utils.json_to_sheet(
+        deliveredOrders.length > 0
+          ? deliveredOrders.map(toRow)
+          : [{ Note: "No delivered orders this month." }]
+      );
+      ws1["!cols"] = [{ wch: 12 }, { wch: 28 }, { wch: 22 }, { wch: 18 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 22 }];
+      XLSX.utils.book_append_sheet(wb, ws1, "Delivered Orders");
+
+      const ws2 = XLSX.utils.json_to_sheet(
+        acceptedOrders.length > 0
+          ? acceptedOrders.map((o) => ({ ...toRow(o), "Status": STATUS_LABELS[o.status] ?? o.status }))
+          : [{ Note: "No accepted orders this month." }]
+      );
+      ws2["!cols"] = [{ wch: 12 }, { wch: 28 }, { wch: 22 }, { wch: 18 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 22 }, { wch: 14 }];
+      XLSX.utils.book_append_sheet(wb, ws2, "Accepted Orders");
+
+      const fileName = `monthly-report-${year}-${String(month + 1).padStart(2, "0")}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+
+      toast({
+        title: "Report Exported",
+        description: `${deliveredOrders.length} delivered · ${acceptedOrders.length} accepted orders exported to ${fileName}`,
+      });
     } catch {
       toast({ title: "Export Failed", description: "Could not generate the monthly report.", variant: "destructive" });
     }
