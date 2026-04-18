@@ -22,11 +22,18 @@ interface OrderConfig {
   selected_label: string;
 }
 
+interface StatusHistoryEntry {
+  status: string;
+  changed_at: string;
+  changed_by?: string | null;
+}
+
 interface Order {
   id: string;
   status: OrderStatus;
   final_amount: number;
   total_amount: number;
+  unit_price?: number;
   discount_amount?: number;
   quantity: number;
   payment_status: string;
@@ -38,9 +45,10 @@ interface Order {
   payment_proof_mime_type?: string | null;
   pricing_snapshot?: unknown;
   configurations?: OrderConfig[];
-  client?: { business_name: string; phone_number?: string; client_code?: string };
+  client?: { business_name: string; phone_number?: string; client_code?: string; email?: string };
   variant?: { variant_name: string; product?: { name: string } };
   approvedDesign?: { designCode: string } | null;
+  statusHistory?: StatusHistoryEntry[];
 }
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
@@ -137,7 +145,7 @@ function OrderDetailModal({
               {order.client?.business_name} · {order.client?.phone_number}
             </p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100">
+          <button type="button" title="Close" aria-label="Close" onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -208,7 +216,7 @@ function OrderDetailModal({
             </div>
             <div className="rounded-lg bg-slate-50 dark:bg-slate-800 px-3 py-2.5 border border-slate-100 dark:border-slate-700">
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Placed</p>
-              <p className="text-sm font-semibold mt-0.5 text-slate-800 dark:text-slate-200">{new Date(order.created_at).toLocaleDateString()}</p>
+              <p className="text-xs font-semibold mt-0.5 text-slate-800 dark:text-slate-200">{new Date(order.created_at).toLocaleString("en-NP", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</p>
             </div>
           </div>
 
@@ -260,6 +268,84 @@ function OrderDetailModal({
             <div className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/40 px-4 py-3">
               <p className="text-[10px] font-bold uppercase tracking-wider text-amber-500">Client Remarks</p>
               <p className="text-sm text-amber-800 dark:text-amber-300 mt-0.5">{order.notes}</p>
+            </div>
+          )}
+
+          {/* Status History Timeline */}
+          {order.statusHistory && order.statusHistory.length > 0 && (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Order Timeline</p>
+              <div className="rounded-xl border border-slate-100 dark:border-slate-700 divide-y divide-slate-50 dark:divide-slate-800 overflow-hidden">
+                {order.statusHistory.map((h, i) => (
+                  <div key={i} className="flex items-start gap-3 px-4 py-3">
+                    <div className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">{STATUS_LABELS[h.status as OrderStatus] || h.status.replace("ORDER_", "")}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {new Date(h.changed_at).toLocaleString("en-NP", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        {h.changed_by ? ` · ${h.changed_by}` : ""}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Invoice (shown when order is accepted / ORDER_PROCESSING+) */}
+          {!isCancelled && order.status !== "ORDER_PLACED" && (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Invoice</p>
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <div className="bg-slate-800 dark:bg-slate-900 px-4 py-3 flex justify-between items-center">
+                  <div>
+                    <p className="text-[10px] text-slate-400 uppercase tracking-wider">Invoice No.</p>
+                    <p className="font-mono text-amber-400 font-bold text-sm">INV-{order.id.slice(0, 8).toUpperCase()}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] text-slate-400">Client</p>
+                    <p className="text-xs font-semibold text-white">{order.client?.business_name}</p>
+                    {order.client?.client_code && <p className="text-[10px] text-slate-400">{order.client.client_code}</p>}
+                  </div>
+                </div>
+                <div className="bg-white dark:bg-slate-800 divide-y divide-slate-50 dark:divide-slate-700">
+                  {(() => {
+                    const snap = order.pricing_snapshot as any;
+                    const unitPrice = order.unit_price ?? (snap?.unit_price ? Number(snap.unit_price) : 0);
+                    const baseTotal = Number((unitPrice * order.quantity).toFixed(2));
+                    const discount = Number(order.discount_amount ?? 0);
+                    const designSurcharge = snap?.designExtraPrice ? Number(snap.designExtraPrice) * order.quantity : 0;
+                    return (
+                      <>
+                        <div className="flex justify-between px-4 py-2.5 text-sm">
+                          <span className="text-slate-500">{order.variant?.product?.name} — {order.variant?.variant_name} × {order.quantity.toLocaleString()}</span>
+                          <span className="font-semibold text-slate-800 dark:text-slate-200">NPR {baseTotal.toLocaleString("en-NP", { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        {discount > 0 && (
+                          <div className="flex justify-between px-4 py-2.5 text-sm">
+                            <span className="text-emerald-600">Discount</span>
+                            <span className="font-semibold text-emerald-600">− NPR {discount.toLocaleString("en-NP", { minimumFractionDigits: 2 })}</span>
+                          </div>
+                        )}
+                        {designSurcharge > 0 && (
+                          <div className="flex justify-between px-4 py-2.5 text-sm">
+                            <span className="text-indigo-600">Design Surcharge{order.approvedDesign ? ` (${order.approvedDesign.designCode})` : ""}</span>
+                            <span className="font-semibold text-indigo-600">+ NPR {designSurcharge.toLocaleString("en-NP", { minimumFractionDigits: 2 })}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between px-4 py-3 bg-slate-50 dark:bg-slate-700/50">
+                          <span className="font-bold text-slate-900 dark:text-white">Total</span>
+                          <span className="font-extrabold text-slate-900 dark:text-white">NPR {Number(order.final_amount).toLocaleString("en-NP", { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+                <div className="bg-slate-50 dark:bg-slate-800/50 px-4 py-2.5 flex justify-between text-[10px] text-slate-400">
+                  <span>Payment: {order.payment_status === "PAID" ? "Wallet" : "Bank Transfer"}</span>
+                  <span>Placed: {new Date(order.created_at).toLocaleString("en-NP", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                </div>
+              </div>
             </div>
           )}
 
@@ -417,6 +503,18 @@ export default function OrderManagementPage() {
   const [statusFilter, setStatusFilter] = useState("All");
   const [detailOrder, setDetailOrder] = useState<Order | null>(null);
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null);
+
+  useEffect(() => {
+    if (!detailOrder) return;
+    fetch(`/api/admin/orders/${detailOrder.id}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.success && d.data) {
+          setDetailOrder((prev) => prev ? { ...prev, statusHistory: d.data.statusHistory, configurations: d.data.configurations ?? prev.configurations, unit_price: d.data.unit_price ?? prev.unit_price } : null);
+        }
+      })
+      .catch(() => {});
+  }, [detailOrder?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [dateTarget, setDateTarget] = useState<Order | null>(null);
   const [advancingId, setAdvancingId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);

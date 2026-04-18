@@ -4,7 +4,7 @@ import { protect } from "../../middleware/auth.middleware";
 import * as adminController from "../../controller/admin/admin.controller";
 import * as publicCatalogController from "../../controller/catalog/public-catalog.controller";
 import { createRegistrationRequestSchema } from "../../validators/registration.validator";
-import { trackPageView } from "../../controller/analytics/analytics.controller";
+import { trackPageView, getPublicTotalVisits } from "../../controller/analytics/analytics.controller";
 import rateLimit from "express-rate-limit";
 
 const registrationRateLimiter = rateLimit({
@@ -49,7 +49,8 @@ router.post("/pricing/calculate", protect, pricingRateLimiter, publicCatalogCont
 // LEGACY CATALOG API: Retained for backwards compatibility (now auth-gated to prevent price scraping)
 router.post("/variants/:variantId/calculate-price", protect, pricingRateLimiter, publicCatalogController.calculatePriceController);
 
-// ANALYTICS: Public page-view tracking (no auth required)
+// ANALYTICS: Public page-view tracking + public visitor count (no auth required)
 router.post("/analytics/pageview", analyticsRateLimiter, trackPageView);
+router.get("/analytics/total-visits", analyticsRateLimiter, getPublicTotalVisits);
 
 export default router;

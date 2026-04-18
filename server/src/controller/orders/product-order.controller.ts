@@ -57,6 +57,9 @@ export const createProductOrder = async (req: Request, res: Response) => {
     }
 
     const userId = (req as any).user.id;
+    const attachmentUrls: string[] | undefined = req.body.attachmentUrls
+      ? (Array.isArray(req.body.attachmentUrls) ? req.body.attachmentUrls : JSON.parse(req.body.attachmentUrls))
+      : undefined;
     const order = await orderService.createProductOrderService({
       userId,
       ...validated.data,
@@ -64,6 +67,7 @@ export const createProductOrder = async (req: Request, res: Response) => {
       paymentProofFileName,
       paymentProofMimeType,
       paymentProofFileSize,
+      attachmentUrls,
     });
 
     res.status(201).json({ success: true, message: "Order placed successfully", data: toApiOrder(order) });

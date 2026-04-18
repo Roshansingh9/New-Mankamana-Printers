@@ -16,6 +16,7 @@ export const createProductOrderSchema = z.object({
   notes: z.string().max(1000).optional(),
   designCode: z.string().max(50).optional(),
   useWallet: z.coerce.boolean().optional().default(false),
+  attachmentUrls: z.array(z.string()).optional(),
 });
 
 export const updateOrderStatusSchema = z.object({

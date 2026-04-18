@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { BsInstagram } from "react-icons/bs";
 import { FaFacebookF } from "react-icons/fa";
 import { IoLogoTiktok } from "react-icons/io5";
@@ -35,8 +35,18 @@ const usefulLinks = [
 ];
 
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
+
 export default function Footer() {
     const [email, setEmail] = useState("");
+    const [totalVisits, setTotalVisits] = useState<number | null>(null);
+
+    useEffect(() => {
+        fetch(`${API_BASE}/analytics/total-visits`)
+            .then((r) => r.json())
+            .then((d) => { if (d.success) setTotalVisits(d.data.total); })
+            .catch(() => {});
+    }, []);
 
     return (
         <footer className="footer">
@@ -118,10 +128,16 @@ export default function Footer() {
                 </div>
             </div>
 
-            <div className="border-t border-[#1e293b] py-5 px-6 text-center">
+            <div className="border-t border-[#1e293b] py-5 px-6 flex flex-col sm:flex-row items-center justify-between gap-2 text-center">
                 <p className="text-[0.75rem] text-[#475569]">
                     © 2024 New Mankamana Printers. All rights reserved.
                 </p>
+                {totalVisits !== null && (
+                    <p className="text-[0.72rem] text-[#334155] flex items-center gap-1.5">
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        {totalVisits.toLocaleString()} total site visits
+                    </p>
+                )}
             </div>
         </footer>
     );

@@ -1,6 +1,6 @@
 import prisma from "../../connect";
 import { getVariantPricingCombination, calculateOrderAmount, normalizeSelectedOptions } from "../catalog/product-pricing.service";
-import { sendOrderPlaced, sendOrderStatusUpdate } from "../../utils/email";
+import { sendOrderPlaced, sendOrderStatusUpdate, sendOrderInvoice } from "../../utils/email";
 import { withCache, invalidateCacheKey } from "../../utils/cache";
 
 const ORDER_LIST_TTL_MS = 30_000; // 30 s — balances freshness vs DB load
@@ -88,9 +88,10 @@ export const createProductOrderService = async (data: {
   paymentProofFileName?: string;
   paymentProofMimeType?: string;
   paymentProofFileSize?: number;
+  attachmentUrls?: string[];
 }) => {
   const { userId, variantId, quantity, options, notes, designCode, useWallet,
-    paymentProofUrl, paymentProofFileName, paymentProofMimeType, paymentProofFileSize } = data;
+    paymentProofUrl, paymentProofFileName, paymentProofMimeType, paymentProofFileSize, attachmentUrls } = data;
   const selectedOptions = normalizeSelectedOptions(options);
 
   const pricingRow = await getVariantPricingCombination(variantId, selectedOptions);
@@ -197,6 +198,7 @@ export const createProductOrderService = async (data: {
         payment_proof_file_name: paymentProofFileName || null,
         payment_proof_mime_type: paymentProofMimeType || null,
         payment_proof_file_size: paymentProofFileSize || null,
+        attachment_urls: attachmentUrls && attachmentUrls.length > 0 ? attachmentUrls : undefined,
       },
     });
 
@@ -522,6 +524,50 @@ export const updateOrderStatusService = async (
     expectedDeliveryDate: result.order.expected_delivery_date,
     ...emailExtras,
   }).catch((err) => console.error(`[Email] Order status notification failed for ${orderId}:`, err));
+
+  // Send invoice email when order is accepted (ORDER_PROCESSING)
+  if (String(result.order.status) === "ORDER_PROCESSING") {
+    prisma.order.findUnique({
+      where: { id: orderId },
+      select: {
+        id: true,
+        quantity: true,
+        unit_price: true,
+        discount_amount: true,
+        final_amount: true,
+        notes: true,
+        created_at: true,
+        payment_status: true,
+        pricing_snapshot: true,
+        configurations: { select: { group_label: true, selected_label: true } },
+        approvedDesign: { select: { designCode: true } },
+        variant: { select: { variant_name: true, product: { select: { name: true } } } },
+        client: { select: { email: true, business_name: true, phone_number: true, client_code: true } },
+      },
+    }).then((o) => {
+      if (!o) return;
+      const snap = o.pricing_snapshot as any;
+      return sendOrderInvoice({
+        to: o.client.email,
+        businessName: o.client.business_name,
+        clientCode: o.client.client_code || "",
+        phone: o.client.phone_number,
+        orderId: o.id,
+        productName: o.variant.product.name,
+        variantName: o.variant.variant_name,
+        quantity: o.quantity,
+        unitPrice: Number(o.unit_price),
+        discountAmount: Number(o.discount_amount ?? 0),
+        designSurcharge: snap?.designExtraPrice ? Number(snap.designExtraPrice) * o.quantity : 0,
+        finalAmount: Number(o.final_amount),
+        configurations: o.configurations,
+        designCode: o.approvedDesign?.designCode,
+        notes: o.notes,
+        paymentMethod: o.payment_status === "PAID" ? "Wallet" : "Bank Transfer",
+        acceptedAt: new Date(),
+      });
+    }).catch((err) => console.error(`[Email] Invoice send failed for ${orderId}:`, err));
+  }
 
   // Invalidate list caches after any status change
   void invalidateClientOrdersCache(result.order.user_id);

@@ -42,6 +42,12 @@ interface OrderConfig {
     selected_label: string;
 }
 
+interface StatusHistoryEntry {
+    status: string;
+    changed_at: string;
+    changed_by?: string | null;
+}
+
 interface ApiOrder {
     id: string;
     quantity: number;
@@ -62,6 +68,7 @@ interface ApiOrder {
         product: { name: string; image_url?: string | null };
     };
     approvedDesign?: { designCode: string } | null;
+    statusHistory?: StatusHistoryEntry[];
 }
 
 function OrderProgressBar({ status }: { status: string }) {
@@ -181,7 +188,7 @@ function OrderDetailModal({ order, onClose, onCancel, cancelling }: {
                             { label: "Amount", value: formatCurrency(order.final_amount) },
                             { label: "Quantity", value: order.quantity.toLocaleString() },
                             { label: "Payment", value: order.payment_status.replace(/_/g, " ") },
-                            { label: "Placed On", value: formatDate(order.created_at) },
+                            { label: "Placed On", value: new Date(order.created_at).toLocaleString("en-NP", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) },
                         ].map(({ label, value }) => (
                             <div key={label} className="rounded-lg bg-slate-50 px-3 py-2.5 border border-slate-100">
                                 <p className="text-[0.65rem] font-bold uppercase tracking-[0.08em] text-slate-400">{label}</p>
@@ -201,6 +208,27 @@ function OrderDetailModal({ order, onClose, onCancel, cancelling }: {
                                 <p className="text-sm font-bold text-amber-900">
                                     {new Date(order.expected_delivery_date).toLocaleDateString("en-NP", { day: "numeric", month: "long", year: "numeric" })}
                                 </p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Status History */}
+                    {order.statusHistory && order.statusHistory.length > 0 && (
+                        <div>
+                            <p className="text-[0.65rem] font-bold uppercase tracking-[0.08em] text-slate-400 mb-2">Order Timeline</p>
+                            <div className="rounded-xl border border-slate-100 overflow-hidden">
+                                {order.statusHistory.map((h, i) => (
+                                    <div key={i} className="flex items-start gap-3 px-4 py-3 border-b border-slate-50 last:border-0">
+                                        <div className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5 flex-shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-semibold text-slate-800">{STATUS_STEP_LABELS[h.status] || h.status.replace("ORDER_", "")}</p>
+                                            <p className="text-xs text-slate-400 mt-0.5">
+                                                {new Date(h.changed_at).toLocaleString("en-NP", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                                                {h.changed_by ? ` · by ${h.changed_by}` : ""}
+                                            </p>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     )}
@@ -285,6 +313,18 @@ export default function OrdersPage() {
     const [search, setSearch] = useState("");
     const [selectedOrder, setSelectedOrder] = useState<ApiOrder | null>(null);
     const [cancellingId, setCancellingId] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!selectedOrder) return;
+        fetch(`${API_BASE}/orders/${selectedOrder.id}`, { headers: getAuthHeaders() })
+            .then((r) => r.json())
+            .then((d) => {
+                if (d.success && d.data?.statusHistory) {
+                    setSelectedOrder((prev) => prev ? { ...prev, statusHistory: d.data.statusHistory } : null);
+                }
+            })
+            .catch(() => {});
+    }, [selectedOrder?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const fetchOrders = useCallback(async (showLoader = false) => {
         if (showLoader) setLoading(true);

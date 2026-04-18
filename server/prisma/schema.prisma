@@ -406,6 +406,7 @@ model Order {
   walletTransaction WalletTransaction? @relation("OrderToWalletTxn", fields: [walletTransactionId], references: [id])
   walletTransactionId String?           @unique @db.Uuid
 
+  attachment_urls  Json?
   statusHistory    OrderStatusHistory[]
 
   @@map("orders")

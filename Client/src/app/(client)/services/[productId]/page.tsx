@@ -127,6 +127,9 @@ export default function ProductOrderPage({ params }: { params: Promise<{ product
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [uploadingProof, setUploadingProof] = useState(false);
   const [proofPath, setProofPath] = useState<string | null>(null);
+  const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
+  const [attachmentPaths, setAttachmentPaths] = useState<string[]>([]);
+  const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [loadingProduct, setLoadingProduct] = useState(true);
   const [loadingOptions, setLoadingOptions] = useState(false);
@@ -364,10 +367,40 @@ export default function ProductOrderPage({ params }: { params: Promise<{ product
     };
   }, [isSelectionComplete, pricingMap, optionGroups, selectedOptions, effectiveQuantity, designCode, approvedDesigns]);
 
+  const handleUploadAttachments = async (): Promise<string[]> => {
+    if (attachmentFiles.length === 0) return attachmentPaths;
+    if (attachmentPaths.length === attachmentFiles.length) return attachmentPaths;
+    setUploadingAttachments(true);
+    try {
+      const uploaded: string[] = [];
+      for (const file of attachmentFiles) {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("folder", "orders/attachments");
+        const res = await fetch(`${API_BASE}/uploads`, { method: "POST", headers: getAuthHeaders(), body: fd });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error?.message || data.message || "Upload failed");
+        if (data.data?.fileUrl) uploaded.push(data.data.fileUrl);
+      }
+      setAttachmentPaths(uploaded);
+      return uploaded;
+    } catch (err: any) {
+      notify.error(err.message || "Failed to upload attachments");
+      return [];
+    } finally {
+      setUploadingAttachments(false);
+    }
+  };
+
   const handleProceedToPayment = async () => {
     if (!selectedVariantId) { notify.error("Please select a variant"); return; }
     if (!pricing) { notify.error("This option combination has no pricing. Please select different options."); return; }
     if (!isQuantityValid) { notify.error(`Minimum quantity is ${minQty}`); return; }
+
+    // Upload attachments if any
+    if (attachmentFiles.length > 0 && attachmentPaths.length !== attachmentFiles.length) {
+      await handleUploadAttachments();
+    }
 
     // Fetch bank details + wallet balance in parallel
     await Promise.allSettled([
@@ -426,6 +459,7 @@ export default function ProductOrderPage({ params }: { params: Promise<{ product
           useWallet: true,
           ...(notes ? { notes } : {}),
           ...(designCode ? { designCode } : {}),
+          ...(attachmentPaths.length > 0 ? { attachmentUrls: attachmentPaths } : {}),
         };
         const res = await fetch(`${API_BASE}/orders`, {
           method: "POST",
@@ -462,6 +496,7 @@ export default function ProductOrderPage({ params }: { params: Promise<{ product
         formData.append("paymentProofPath", path);
         formData.append("paymentProofFileName", proofFile?.name || "");
         formData.append("paymentProofMimeType", proofFile?.type || "");
+        if (attachmentPaths.length > 0) formData.append("attachmentUrls", JSON.stringify(attachmentPaths));
         const res = await fetch(`${API_BASE}/orders`, {
           method: "POST",
           headers: getAuthHeaders(),
@@ -731,6 +766,59 @@ export default function ProductOrderPage({ params }: { params: Promise<{ product
           </div>
         )}
 
+        {/* Reference file attachments */}
+        {selectedVariantId && (
+          <div>
+            <label className={labelCls}>
+              Reference Files <span className="text-slate-400 font-normal normal-case">(optional — design references, images, etc.)</span>
+            </label>
+            <div
+              className="rounded-lg border-2 border-dashed border-slate-200 p-4 text-center cursor-pointer hover:border-slate-300 hover:bg-slate-50/50 transition-colors"
+              onClick={() => document.getElementById("attachment-files")?.click()}
+            >
+              {attachmentFiles.length === 0 ? (
+                <div>
+                  <svg className="mx-auto w-7 h-7 text-slate-300 mb-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" /></svg>
+                  <p className="text-sm text-slate-400">Click to attach files</p>
+                  <p className="text-xs text-slate-300 mt-0.5">Any file type accepted • Multiple files allowed</p>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {attachmentFiles.map((f, i) => (
+                    <div key={i} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-slate-100 text-sm">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                        <span className="text-slate-700 font-medium truncate">{f.name}</span>
+                        <span className="text-slate-400 text-xs flex-shrink-0">{(f.size / 1024).toFixed(0)} KB</span>
+                      </div>
+                      <button type="button" title={`Remove ${f.name}`} aria-label={`Remove ${f.name}`} onClick={(e) => { e.stopPropagation(); setAttachmentFiles((prev) => prev.filter((_, j) => j !== i)); setAttachmentPaths([]); }} className="text-slate-300 hover:text-red-400 ml-2 flex-shrink-0">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+                  ))}
+                  <button type="button" onClick={(e) => { e.stopPropagation(); document.getElementById("attachment-files")?.click(); }} className="text-xs text-slate-400 hover:text-slate-600 mt-1">+ Add more files</button>
+                </div>
+              )}
+            </div>
+            <input
+              id="attachment-files"
+              type="file"
+              multiple
+              className="hidden"
+              title="Attach reference files for your order"
+              aria-label="Attach reference files"
+              onChange={(e) => {
+                const files = Array.from(e.target.files || []);
+                if (files.length > 0) {
+                  setAttachmentFiles((prev) => [...prev, ...files]);
+                  setAttachmentPaths([]);
+                }
+                e.target.value = "";
+              }}
+            />
+          </div>
+        )}
+
         {/* Pricing summary */}
         {selectedVariantId && (
           <div className={`rounded-xl border overflow-hidden transition-all ${pricing ? "border-[#0f172a]/20 shadow-sm" : "border-slate-100"}`}>
@@ -795,13 +883,15 @@ export default function ProductOrderPage({ params }: { params: Promise<{ product
           <button
             type="button"
             onClick={handleProceedToPayment}
-            disabled={!pricing}
+            disabled={!pricing || uploadingAttachments}
             className="flex-1 py-2.5 bg-[#0f172a] text-white text-sm font-bold rounded-lg hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            Proceed to Payment
-            <svg className="inline-block w-4 h-4 ml-1.5 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
-            </svg>
+            {uploadingAttachments ? "Uploading files…" : "Continue"}
+            {!uploadingAttachments && (
+              <svg className="inline-block w-4 h-4 ml-1.5 -mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+              </svg>
+            )}
           </button>
         </div>
       </div>

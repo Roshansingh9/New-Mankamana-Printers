@@ -511,3 +511,134 @@ export const sendDesignRejected = async (opts: {
     `,
   });
 };
+
+// sendOrderInvoice: Sends a detailed invoice to the client when admin accepts the order (ORDER_PROCESSING)
+export const sendOrderInvoice = async (opts: {
+  to: string;
+  businessName: string;
+  clientCode: string;
+  phone: string;
+  orderId: string;
+  productName: string;
+  variantName: string;
+  quantity: number;
+  unitPrice: number;
+  discountAmount: number;
+  designSurcharge: number;
+  finalAmount: number;
+  configurations: Array<{ group_label: string; selected_label: string }>;
+  designCode?: string | null;
+  notes?: string | null;
+  paymentMethod: string;
+  acceptedAt: Date;
+}) => {
+  const { to, businessName, clientCode, phone, orderId, productName, variantName, quantity,
+    unitPrice, discountAmount, designSurcharge, finalAmount, configurations, designCode,
+    notes, paymentMethod, acceptedAt } = opts;
+
+  const invoiceNumber = `INV-${orderId.slice(0, 8).toUpperCase()}`;
+  const acceptedDateStr = acceptedAt.toLocaleString("en-NP", { dateStyle: "long", timeStyle: "short" });
+
+  const configRows = configurations.map((c) =>
+    `<tr><td style="padding:6px 0;color:#64748b;font-size:13px;">${c.group_label}</td><td style="padding:6px 0;font-weight:600;font-size:13px;">${c.selected_label}</td></tr>`
+  ).join("");
+
+  const baseTotal = Number((unitPrice * quantity).toFixed(2));
+
+  await transporter.sendMail({
+    from: FROM,
+    to,
+    subject: `Invoice ${invoiceNumber} — Order Accepted`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;color:#1e293b;">
+        <div style="background:#0f172a;padding:32px 40px;display:flex;align-items:center;justify-content:space-between;">
+          <div>
+            <h1 style="color:#fff;margin:0;font-size:22px;font-weight:700;">New Mankamana Printers</h1>
+            <p style="color:#94a3b8;margin:4px 0 0;font-size:13px;">Tax Invoice</p>
+          </div>
+          <div style="text-align:right;">
+            <p style="color:#fbbf24;font-weight:800;font-size:18px;margin:0;">${invoiceNumber}</p>
+            <p style="color:#94a3b8;font-size:12px;margin:4px 0 0;">Accepted: ${acceptedDateStr}</p>
+          </div>
+        </div>
+
+        <div style="padding:32px 40px;border:1px solid #e2e8f0;border-top:none;">
+          <!-- Bill To -->
+          <div style="display:flex;justify-content:space-between;margin-bottom:28px;gap:20px;">
+            <div>
+              <p style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin:0 0 6px;">Bill To</p>
+              <p style="font-weight:700;font-size:15px;margin:0 0 2px;">${businessName}</p>
+              <p style="color:#64748b;font-size:13px;margin:0 0 2px;">Client Code: <strong>${clientCode}</strong></p>
+              <p style="color:#64748b;font-size:13px;margin:0;">Phone: ${phone}</p>
+            </div>
+            <div style="text-align:right;">
+              <p style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin:0 0 6px;">Invoice Details</p>
+              <p style="color:#64748b;font-size:13px;margin:0 0 2px;">Order: <strong style="font-family:monospace;">#${orderId.slice(0, 8).toUpperCase()}</strong></p>
+              <p style="color:#64748b;font-size:13px;margin:0;">Payment: ${paymentMethod}</p>
+            </div>
+          </div>
+
+          <!-- Product table -->
+          <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+            <thead>
+              <tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
+                <th style="padding:10px 12px;text-align:left;font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;">Description</th>
+                <th style="padding:10px 12px;text-align:right;font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;">Unit Price</th>
+                <th style="padding:10px 12px;text-align:right;font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;">Qty</th>
+                <th style="padding:10px 12px;text-align:right;font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom:1px solid #f1f5f9;">
+                <td style="padding:12px;font-size:14px;">
+                  <strong>${productName}</strong><br/>
+                  <span style="color:#64748b;font-size:12px;">${variantName}</span>
+                </td>
+                <td style="padding:12px;text-align:right;font-size:14px;">NPR ${unitPrice.toLocaleString("en-NP", { minimumFractionDigits: 2 })}</td>
+                <td style="padding:12px;text-align:right;font-size:14px;">${quantity.toLocaleString()}</td>
+                <td style="padding:12px;text-align:right;font-size:14px;font-weight:600;">NPR ${baseTotal.toLocaleString("en-NP", { minimumFractionDigits: 2 })}</td>
+              </tr>
+              ${discountAmount > 0 ? `
+              <tr style="border-bottom:1px solid #f1f5f9;">
+                <td colspan="3" style="padding:10px 12px;font-size:13px;color:#15803d;">Discount</td>
+                <td style="padding:10px 12px;text-align:right;font-size:13px;color:#15803d;font-weight:600;">− NPR ${discountAmount.toLocaleString("en-NP", { minimumFractionDigits: 2 })}</td>
+              </tr>` : ""}
+              ${designSurcharge > 0 ? `
+              <tr style="border-bottom:1px solid #f1f5f9;">
+                <td colspan="3" style="padding:10px 12px;font-size:13px;color:#6366f1;">Design Surcharge${designCode ? ` (${designCode})` : ""}</td>
+                <td style="padding:10px 12px;text-align:right;font-size:13px;color:#6366f1;font-weight:600;">+ NPR ${designSurcharge.toLocaleString("en-NP", { minimumFractionDigits: 2 })}</td>
+              </tr>` : ""}
+            </tbody>
+            <tfoot>
+              <tr style="background:#0f172a;">
+                <td colspan="3" style="padding:14px 12px;font-size:13px;font-weight:700;color:#e2e8f0;text-transform:uppercase;letter-spacing:1px;">Total Amount</td>
+                <td style="padding:14px 12px;text-align:right;font-size:18px;font-weight:800;color:#fbbf24;">NPR ${finalAmount.toLocaleString("en-NP", { minimumFractionDigits: 2 })}</td>
+              </tr>
+            </tfoot>
+          </table>
+
+          ${configRows.length > 0 ? `
+          <!-- Configuration -->
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px 20px;margin-bottom:20px;">
+            <p style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin:0 0 10px;">Print Specifications</p>
+            <table style="width:100%;border-collapse:collapse;">
+              ${configRows}
+            </table>
+          </div>` : ""}
+
+          ${designCode ? `<p style="font-size:13px;color:#6366f1;margin:0 0 16px;">Design Code: <strong style="font-family:monospace;">${designCode}</strong></p>` : ""}
+          ${notes ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:14px 18px;margin-bottom:20px;"><p style="font-size:11px;font-weight:700;color:#d97706;text-transform:uppercase;letter-spacing:1px;margin:0 0 6px;">Remarks</p><p style="margin:0;font-size:13px;color:#78350f;">${notes}</p></div>` : ""}
+
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 18px;margin-bottom:24px;">
+            <p style="margin:0;font-size:13px;color:#15803d;">✅ Your order has been accepted and is now being processed. You will receive updates as your order progresses.</p>
+          </div>
+
+          <p style="color:#94a3b8;font-size:13px;margin:0;">Questions? Contact us at <a href="mailto:${process.env.SMTP_EMAIL}" style="color:#0061FF;">${process.env.SMTP_EMAIL}</a>.</p>
+        </div>
+        <div style="padding:20px 40px;background:#f8fafc;border:1px solid #e2e8f0;border-top:none;text-align:center;">
+          <p style="margin:0;color:#94a3b8;font-size:12px;">New Mankamana Printers &mdash; Professional Printing Services</p>
+        </div>
+      </div>
+    `,
+  });
+};

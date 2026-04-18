@@ -27,6 +27,17 @@ export const getVisitorStats = async (_req: Request, res: Response) => {
   }
 };
 
+// PUBLIC — returns only the total page-view count (no auth required)
+export const getPublicTotalVisits = async (_req: Request, res: Response) => {
+  try {
+    const stats = await getVisitorStatsService();
+    res.setHeader("Cache-Control", "public, max-age=60");
+    res.status(200).json({ success: true, data: { total: stats.pageViews.total } });
+  } catch {
+    res.status(200).json({ success: true, data: { total: 0 } });
+  }
+};
+
 export const getPerformanceStats = async (_req: Request, res: Response) => {
   try {
     res.status(200).json({
