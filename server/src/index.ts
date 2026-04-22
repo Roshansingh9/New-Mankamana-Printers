@@ -51,22 +51,41 @@ app.use(
 );
 
 // ── CORS: whitelist known origins only
+// Supports exact entries and wildcard patterns in ALLOWED_ORIGINS.
+// Example:
+//   ALLOWED_ORIGINS=https://new-mankamana-printers.vercel.app,https://new-mankamana-printers-*.vercel.app,http://localhost:3000
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:3000,http://localhost:3001")
   .split(",")
-  .map((o) => o.trim());
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+const escapeRegex = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const wildcardToRegex = (pattern: string) => {
+  const regexBody = pattern
+    .split("*")
+    .map((part) => escapeRegex(part))
+    .join(".*");
+  return new RegExp(`^${regexBody}$`);
+};
+
+const exactAllowedOrigins = allowedOrigins.filter((o) => !o.includes("*"));
+const wildcardAllowedOriginRegexes = allowedOrigins
+  .filter((o) => o.includes("*"))
+  .map((o) => wildcardToRegex(o));
 app.use(
   cors({
     origin: (origin, cb) => {
       // allow server-to-server or same-origin requests (no Origin header)
       if (!origin) return cb(null, true);
-      // exact match from ALLOWED_ORIGINS env var
-      if (allowedOrigins.includes(origin)) return cb(null, true);
-      // allow all Vercel preview deployments for the same project prefixes
-      const vercelPreview = allowedOrigins.some((allowed) => {
-        const base = allowed.replace("https://", "");
-        return origin.startsWith(`https://${base.split(".")[0]}`);
-      });
-      if (vercelPreview) return cb(null, true);
+
+      // exact match from ALLOWED_ORIGINS
+      if (exactAllowedOrigins.includes(origin)) return cb(null, true);
+
+      // wildcard match from ALLOWED_ORIGINS (e.g. https://project-*.vercel.app)
+      if (wildcardAllowedOriginRegexes.some((rx) => rx.test(origin))) {
+        return cb(null, true);
+      }
+
       cb(new Error(`CORS: origin ${origin} not allowed`));
     },
     credentials: true,
