@@ -93,6 +93,10 @@ router.get("/products/:productId/pricing", protect, restrictTo("ADMIN"), adminCa
 router.post("/products/:productId/pricing", protect, restrictTo("ADMIN"), criticalActionRateLimiter, requireIdempotencyKey, adminCatalogController.createProductPricing);
 router.patch("/pricing/:pricingId", protect, restrictTo("ADMIN"), criticalActionRateLimiter, requireIdempotencyKey, adminCatalogController.updatePricingRow);
 router.delete("/pricing/:pricingId/discount", protect, restrictTo("ADMIN"), criticalActionRateLimiter, requireIdempotencyKey, adminCatalogController.removePricingDiscount);
+router.delete("/products/:productId", protect, restrictTo("ADMIN"), criticalActionRateLimiter, requireIdempotencyKey, adminCatalogController.deleteProduct);
+router.delete("/fields/:fieldId", protect, restrictTo("ADMIN"), criticalActionRateLimiter, requireIdempotencyKey, adminCatalogController.deleteField);
+router.delete("/options/:optionId", protect, restrictTo("ADMIN"), criticalActionRateLimiter, requireIdempotencyKey, adminCatalogController.deleteOption);
+router.delete("/pricing/:pricingId", protect, restrictTo("ADMIN"), criticalActionRateLimiter, requireIdempotencyKey, adminCatalogController.deletePricingRow);
 
 // PRODUCT GROUPS: 3-tier hierarchy (group → product → variant)
 router.get("/product-groups", protect, restrictTo("ADMIN"), productGroupController.adminListGroupsController);

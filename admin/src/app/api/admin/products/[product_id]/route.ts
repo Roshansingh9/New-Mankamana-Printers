@@ -78,3 +78,19 @@ export async function PATCH(
 
   return toJsonResponse(apiResponse);
 }
+
+export async function DELETE(
+  _request: Request,
+  context: { params: Promise<{ product_id: string }> }
+) {
+  const token = await getAuthToken();
+  if (!token) {
+    return NextResponse.json({ message: "Not authenticated." }, { status: 401 });
+  }
+  const { product_id } = await context.params;
+  const apiResponse = await fetch(`${API_BASE_URL}/admin/products/${product_id}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return toJsonResponse(apiResponse);
+}
