@@ -15,7 +15,6 @@ import {
   Users,
   BadgeDollarSign,
   X,
-  ShoppingBag,
 } from "lucide-react";
 import { cachedJsonFetch, invalidateCacheKey } from "@/lib/requestCache";
 
@@ -83,7 +82,6 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     {
       label: "Catalog",
       items: [
-        { title: "Products", href: "/product_adder", icon: ShoppingBag, badge: 0 },
         { title: "Pricing", href: "/pricing", icon: BadgeDollarSign, badge: 0 },
       ],
     },

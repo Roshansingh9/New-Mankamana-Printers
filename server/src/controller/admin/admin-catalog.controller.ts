@@ -567,53 +567,39 @@ export const removePricingDiscount = async (req: Request, res: Response) => {
   }
 };
 
-// ─── DELETE OPERATIONS ─────────────────────────────────────────────────────────
-
-export const deleteProduct = async (req: Request, res: Response) => {
+// ─── product_adder: delete endpoints ──────────────────────────────────────────
+export const paDeleteProduct = async (req: Request, res: Response) => {
   try {
-    const productId = req.params.productId as string;
+    const { productId } = req.params;
     await prisma.product.update({ where: { id: productId }, data: { is_active: false } });
     await invalidateCatalogCachesForProduct(productId);
-    res.json({ success: true, message: "Product removed" });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ success: false, message: e.message }); }
 };
-
-export const deleteField = async (req: Request, res: Response) => {
+export const paDeleteField = async (req: Request, res: Response) => {
   try {
-    const fieldId = req.params.fieldId as string;
-    const group = await prisma.optionGroup.findUnique({ where: { id: fieldId }, select: { variant_id: true } });
+    const { fieldId } = req.params;
+    const g = await prisma.optionGroup.findUnique({ where: { id: fieldId }, select: { variant_id: true } });
     await prisma.optionGroup.delete({ where: { id: fieldId } });
-    if (group?.variant_id) await invalidateCatalogCachesForVariant(group.variant_id);
-    res.json({ success: true, message: "Option removed" });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
+    if (g?.variant_id) await invalidateCatalogCachesForVariant(g.variant_id);
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ success: false, message: e.message }); }
 };
-
-export const deleteOption = async (req: Request, res: Response) => {
+export const paDeleteOption = async (req: Request, res: Response) => {
   try {
-    const optionId = req.params.optionId as string;
-    const val = await prisma.optionValue.findUnique({
-      where: { id: optionId },
-      select: { group: { select: { variant_id: true } } },
-    });
+    const { optionId } = req.params;
+    const v = await prisma.optionValue.findUnique({ where: { id: optionId }, select: { group: { select: { variant_id: true } } } });
     await prisma.optionValue.delete({ where: { id: optionId } });
-    if (val?.group?.variant_id) await invalidateCatalogCachesForVariant(val.group.variant_id);
-    res.json({ success: true, message: "Choice removed" });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
+    if (v?.group?.variant_id) await invalidateCatalogCachesForVariant(v.group.variant_id);
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ success: false, message: e.message }); }
 };
-
-export const deletePricingRow = async (req: Request, res: Response) => {
+export const paDeletePricing = async (req: Request, res: Response) => {
   try {
-    const pricingId = req.params.pricingId as string;
+    const { pricingId } = req.params;
     const row = await prisma.variantPricing.delete({ where: { id: pricingId } });
     await invalidateCatalogPricingForVariant(row.variant_id);
-    res.json({ success: true, message: "Price row removed" });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
+    res.json({ success: true });
+  } catch (e: any) { res.status(500).json({ success: false, message: e.message }); }
 };
+
