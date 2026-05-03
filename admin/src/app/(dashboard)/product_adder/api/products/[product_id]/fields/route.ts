@@ -1,4 +1,4 @@
-import { proxy } from "../../../../_proxy";
+import { proxy } from "../../../_proxy";
 import type { NextRequest } from "next/server";
 
 type Ctx = { params: Promise<{ product_id: string }> };

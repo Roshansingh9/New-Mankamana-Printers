@@ -596,7 +596,7 @@ export const removePricingDiscount = async (req: Request, res: Response) => {
 // ─── product_adder: delete endpoints ──────────────────────────────────────────
 export const paDeleteProduct = async (req: Request, res: Response) => {
   try {
-    const { productId } = req.params;
+    const productId = String(req.params.productId);
     await prisma.product.update({ where: { id: productId }, data: { is_active: false } });
     await invalidateCatalogCachesForProduct(productId);
     res.json({ success: true });
@@ -604,7 +604,7 @@ export const paDeleteProduct = async (req: Request, res: Response) => {
 };
 export const paDeleteField = async (req: Request, res: Response) => {
   try {
-    const { fieldId } = req.params;
+    const fieldId = String(req.params.fieldId);
     const g = await prisma.optionGroup.findUnique({ where: { id: fieldId }, select: { variant_id: true } });
     await prisma.optionGroup.delete({ where: { id: fieldId } });
     if (g?.variant_id) await invalidateCatalogCachesForVariant(g.variant_id);
@@ -613,8 +613,8 @@ export const paDeleteField = async (req: Request, res: Response) => {
 };
 export const paDeleteOption = async (req: Request, res: Response) => {
   try {
-    const { optionId } = req.params;
-    const v = await prisma.optionValue.findUnique({ where: { id: optionId }, select: { group: { select: { variant_id: true } } } });
+    const optionId = String(req.params.optionId);
+    const v = await prisma.optionValue.findUnique({ where: { id: optionId }, select: { group_id: true, group: { select: { variant_id: true } } } });
     await prisma.optionValue.delete({ where: { id: optionId } });
     if (v?.group?.variant_id) await invalidateCatalogCachesForVariant(v.group.variant_id);
     res.json({ success: true });
@@ -622,7 +622,7 @@ export const paDeleteOption = async (req: Request, res: Response) => {
 };
 export const paDeletePricing = async (req: Request, res: Response) => {
   try {
-    const { pricingId } = req.params;
+    const pricingId = String(req.params.pricingId);
     const row = await prisma.variantPricing.delete({ where: { id: pricingId } });
     await invalidateCatalogPricingForVariant(row.variant_id);
     res.json({ success: true });

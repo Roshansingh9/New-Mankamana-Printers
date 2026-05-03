@@ -96,7 +96,7 @@ export const createPaymentDetails = async (req: Request, res: Response) => {
 // updatePaymentDetails: Admin-only, updates an existing payment method by id
 export const updatePaymentDetails = async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     if (!id) return res.status(400).json({ success: false, message: "id required" });
 
     const existing = await getPaymentDetailByIdService(id);
@@ -158,7 +158,7 @@ export const updatePaymentDetails = async (req: Request, res: Response) => {
 // deletePaymentDetails: Admin-only, deactivates a payment method by id
 export const deletePaymentDetails = async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
     if (!id) return res.status(400).json({ success: false, message: "id required" });
 
     const detail = await getPaymentDetailByIdService(id);

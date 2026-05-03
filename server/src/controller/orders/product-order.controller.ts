@@ -246,7 +246,7 @@ export const getOrderPaymentProof = async (req: Request, res: Response) => {
 // downloadOrderInvoice: Admin-only — generates and streams a PDF invoice for any order
 export const downloadOrderInvoice = async (req: Request, res: Response) => {
   try {
-    const { orderId } = req.params;
+    const orderId = String(req.params.orderId);
 
     const order = await prisma.order.findUnique({
       where: { id: orderId },
