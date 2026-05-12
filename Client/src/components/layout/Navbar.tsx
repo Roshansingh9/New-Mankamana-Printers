@@ -56,6 +56,7 @@ export default function Navbar() {
         { href: "/orders", label: "Orders" },
         { href: "/wallet", label: "Wallet" },
         { href: "/templates", label: "Designs" },
+        { href: "/contact", label: "Contact" },
     ];
     const navLinks = isAuthenticated ? authedNavLinks : baseNavLinks;
 

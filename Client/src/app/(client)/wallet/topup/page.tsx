@@ -82,7 +82,7 @@ export default function TopUpPage() {
             invalidateClientCache("wallet-topups-PENDING_REVIEW");
             invalidateClientCache("wallet-balance");
             notify.success("Top-up submitted! Awaiting admin approval.");
-            router.push("/wallet");
+            router.push("/wallet?tab=topups");
         } catch {
             notify.error("Network error. Please try again.");
         } finally {

@@ -563,7 +563,7 @@ export const sendOrderInvoice = async (opts: {
         <div style="background:#0f172a;padding:32px 40px;display:flex;align-items:center;justify-content:space-between;">
           <div>
             <h1 style="color:#fff;margin:0;font-size:22px;font-weight:700;">New Mankamana Printers</h1>
-            <p style="color:#94a3b8;margin:4px 0 0;font-size:13px;">Tax Invoice</p>
+            <p style="color:#94a3b8;margin:4px 0 0;font-size:13px;">Invoice</p>
           </div>
           <div style="text-align:right;">
             <p style="color:#fbbf24;font-weight:800;font-size:18px;margin:0;">${invoiceNumber}</p>

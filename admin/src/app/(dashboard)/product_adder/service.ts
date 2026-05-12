@@ -52,6 +52,10 @@ export async function createField(productId: string, label: string, isPricingFie
   return { id: raw.id, field_key: raw.field_key, label: raw.label, is_pricing_field: raw.is_pricing_field ?? isPricingField, choices: [] };
 }
 
+export async function updateField(fieldId: string, label: string, isPricingField: boolean): Promise<void> {
+  await call(`/fields/${fieldId}`, "PATCH", { label, is_pricing_field: isPricingField });
+}
+
 export async function deleteField(fieldId: string): Promise<void> {
   await call(`/fields/${fieldId}`, "DELETE");
 }
@@ -61,6 +65,10 @@ export async function deleteField(fieldId: string): Promise<void> {
 export async function createChoice(fieldId: string, label: string): Promise<{ id: string; value: string; label: string }> {
   const value = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
   return call(`/fields/${fieldId}/options`, "POST", { value, label });
+}
+
+export async function updateChoice(optionId: string, label: string): Promise<void> {
+  await call(`/options/${optionId}`, "PATCH", { label });
 }
 
 export async function deleteChoice(optionId: string): Promise<void> {

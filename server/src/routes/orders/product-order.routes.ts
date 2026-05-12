@@ -71,4 +71,18 @@ router.post(
   confirmWalletPayment
 );
 
+router.get(
+  "/:orderId/payment-proof",
+  protect,
+  restrictTo("CLIENT"),
+  orderController.getMyOrderPaymentProof
+);
+
+router.get(
+  "/:orderId/attachments/:fileIndex",
+  protect,
+  restrictTo("CLIENT"),
+  orderController.getMyOrderAttachment
+);
+
 export default router;

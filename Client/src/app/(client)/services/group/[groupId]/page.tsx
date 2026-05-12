@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { getAuthHeaders } from "@/store/authStore";
-import { fetchJsonCached, registerFocusRevalidation } from "@/utils/requestCache";
+import { fetchJsonCached, registerFocusRevalidation, startBackgroundRefresh } from "@/utils/requestCache";
 import { normalizeImageUrl } from "@/utils/image";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
@@ -78,28 +78,34 @@ export default function GroupPage() {
         const key = `catalog-group-${groupId}`;
         const url = `${API_BASE}/product-groups/${groupId}`;
         const init = { headers: getAuthHeaders() };
+        let lastResponse: GroupResponse | null = null;
 
         const applyData = (d: GroupResponse) => {
             if (d.success && d.data) {
+                lastResponse = d;
                 setGroup(d.data);
                 // Prefetch each sub-product's details + variants into L1+L2 cache
                 d.data.products.forEach((p) => {
-                    fetchJsonCached<unknown>(`catalog-product-${p.id}`, `${API_BASE}/products/${p.id}`, init, 120_000).catch(() => {});
-                    fetchJsonCached<unknown>(`catalog-variants-${p.id}`, `${API_BASE}/products/${p.id}/variants`, init, 120_000).catch(() => {});
+                    fetchJsonCached<unknown>(`catalog-product-${p.id}`, `${API_BASE}/products/${p.id}`, init, 60_000).catch(() => {});
+                    fetchJsonCached<unknown>(`catalog-variants-${p.id}`, `${API_BASE}/products/${p.id}/variants`, init, 60_000).catch(() => {});
                 });
             } else {
                 setNotFound(true);
             }
         };
 
-        fetchJsonCached<GroupResponse>(key, url, init, 120_000)
+        fetchJsonCached<GroupResponse>(key, url, init, 60_000)
             .then(applyData)
             .catch(() => setNotFound(true))
             .finally(() => setLoading(false));
 
-        // Re-fetch when tab regains focus so product list stays current
-        const deregister = registerFocusRevalidation<GroupResponse>(key, url, init, 120_000, applyData);
-        return deregister;
+        const deregister = registerFocusRevalidation<GroupResponse>(key, url, init, 60_000, applyData);
+        const stopBg = startBackgroundRefresh<GroupResponse>(
+            key, url, init, 60_000,
+            () => lastResponse as GroupResponse,
+            applyData
+        );
+        return () => { deregister(); stopBg(); };
     }, [groupId]);
 
     return (

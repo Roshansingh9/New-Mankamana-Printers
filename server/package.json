@@ -9,6 +9,7 @@
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
     "seed:run": "tsx prisma/seed.ts",
+    "seed:free-designs": "tsx prisma/seed-free-designs.ts",
     "seed": "prisma migrate reset --force --skip-seed --skip-generate && npm run seed:run",
     "swagger": "tsx src/swagger.ts",
     "bucket:init": "tsx scripts/init-supabase-bucket.ts",

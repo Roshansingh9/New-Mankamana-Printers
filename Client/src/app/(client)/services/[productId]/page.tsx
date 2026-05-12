@@ -4,7 +4,7 @@ import { useState, useEffect, use, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore, getAuthHeaders } from "@/store/authStore";
 import { notify } from "@/utils/notifications";
-import { fetchJsonCached, revalidateInBackground } from "@/utils/requestCache";
+import { fetchJsonCached, revalidateInBackground, registerFocusRevalidation } from "@/utils/requestCache";
 import { uniqueImageUrls } from "@/utils/image";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
@@ -169,30 +169,32 @@ export default function ProductOrderPage({ params }: { params: Promise<{ product
   const quantityNames = useMemo(() => new Set(["quantity", "qty"]), []);
 
   useEffect(() => {
+    const init = { headers: getAuthHeaders() };
+    const productKey = `catalog-product-${productId}`;
+    const variantsKey = `catalog-variants-${productId}`;
+
+    const applyProduct = (d: ApiResponse<Product>) => {
+      if (d.success && d.data) {
+        setProduct(d.data);
+        setPreviewIndex(0);
+        setFailedPreviewUrls({});
+        return;
+      }
+      const legacyProduct = d as unknown as Product;
+      if (legacyProduct?.id) {
+        setProduct(legacyProduct);
+        setPreviewIndex(0);
+        setFailedPreviewUrls({});
+      }
+    };
+
     setLoadingProduct(true);
-    fetchJsonCached<ApiResponse<Product>>(`catalog-product-${productId}`, `${API_BASE}/products/${productId}`, { headers: getAuthHeaders() }, 120_000)
-      .then((d) => {
-        if (d.success && d.data) {
-          setProduct(d.data);
-          setPreviewIndex(0);
-          setFailedPreviewUrls({});
-          return;
-        }
-
-        const legacyProduct = d as unknown as Product;
-        if (legacyProduct?.id) {
-          setProduct(legacyProduct);
-          setPreviewIndex(0);
-          setFailedPreviewUrls({});
-          return;
-        }
-
-        notify.error("Product not found");
-      })
+    fetchJsonCached<ApiResponse<Product>>(productKey, `${API_BASE}/products/${productId}`, init, 60_000)
+      .then((d) => { applyProduct(d); if (!d.success && !(d as unknown as Product)?.id) notify.error("Product not found"); })
       .catch(() => notify.error("Failed to load product"))
       .finally(() => setLoadingProduct(false));
 
-    fetchJsonCached<ApiResponse<Variant[]>>(`catalog-variants-${productId}`, `${API_BASE}/products/${productId}/variants`, { headers: getAuthHeaders() }, 120_000)
+    fetchJsonCached<ApiResponse<Variant[]>>(variantsKey, `${API_BASE}/products/${productId}/variants`, init, 60_000)
       .then((d) => {
         if (d.success) {
           const list: Variant[] = d.data || [];
@@ -213,6 +215,17 @@ export default function ProductOrderPage({ params }: { params: Promise<{ product
         }
       })
       .catch(() => {});
+
+    const deregProduct = registerFocusRevalidation<ApiResponse<Product>>(
+      productKey, `${API_BASE}/products/${productId}`, init, 60_000,
+      (d) => { if (d.success && d.data) setProduct(d.data); }
+    );
+    const deregVariants = registerFocusRevalidation<ApiResponse<Variant[]>>(
+      variantsKey, `${API_BASE}/products/${productId}/variants`, init, 60_000,
+      (d) => { if (d.success && d.data) setVariants(d.data); }
+    );
+
+    return () => { deregProduct(); deregVariants(); };
   }, [productId]);
 
   useEffect(() => {
@@ -371,13 +384,21 @@ export default function ProductOrderPage({ params }: { params: Promise<{ product
   const quantityNumber = Number(quantity);
   const quantityFromGroup = quantityGroup ? Number(selectedOptions[quantityGroup.name] || "") : NaN;
 
-  // For non-numeric tier groups, effectiveQuantity comes from the manual number input.
-  // For numeric-only groups, it comes from the dropdown or the input as before.
+  // For non-numeric tier groups (e.g. "500_minus"), parse the first numeric sequence from the code.
+  const nonNumericTierQty = useMemo(() => {
+    if (!hasNonNumericQtyGroup || !quantityGroup) return NaN;
+    const code = selectedOptions[quantityGroup.name] || "";
+    const match = code.match(/\d+/);
+    return match ? Number(match[0]) : minQty;
+  }, [hasNonNumericQtyGroup, quantityGroup, selectedOptions, minQty]);
+
   const effectiveQuantity = hasMultipleQtyChoices
     ? quantityFromGroup
     : hasSingleQtyBase
       ? quantityNumber
-      : quantityNumber; // both generic (no group) and non-numeric tier group
+      : hasNonNumericQtyGroup
+        ? nonNumericTierQty
+        : quantityNumber;
 
   const isQuantityValid =
     Number.isFinite(effectiveQuantity) &&
@@ -878,35 +899,19 @@ export default function ProductOrderPage({ params }: { params: Promise<{ product
                   />
                 </div>
               ) : quantityGroup && hasNonNumericQtyGroup ? (
-                // Pricing tier dropdown + separate quantity number input
-                <>
-                  <div>
-                    <label className={labelCls}>{quantityGroup.label}</label>
-                    <select
-                      value={selectedOptions[quantityGroup.name] || ""}
-                      onChange={(e) => { setSelectedOptions((prev) => ({ ...prev, [quantityGroup.name]: e.target.value })); setPricingError(null); }}
-                      aria-label={quantityGroup.label}
-                      className={selectCls}
-                    >
-                      <option value="">— Select tier —</option>
-                      {quantityGroup.values.map((v) => <option key={v.id} value={v.code}>{v.label}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label htmlFor="qty" className={labelCls}>
-                      Quantity <span className="text-slate-400 font-normal normal-case">min. {minQty}</span>
-                    </label>
-                    <input
-                      id="qty"
-                      type="number"
-                      min={minQty}
-                      step={1}
-                      value={quantity}
-                      onChange={(e) => { setQuantity(e.target.value); setPricingError(null); }}
-                      className="w-44 px-3 py-2.5 border border-slate-200 rounded-lg text-sm text-slate-800 text-center focus:border-[#0f172a] focus:ring-2 focus:ring-[#0f172a]/10 outline-none"
-                    />
-                  </div>
-                </>
+                // Pricing tier dropdown — the selected tier IS the quantity
+                <div>
+                  <label className={labelCls}>Quantity</label>
+                  <select
+                    value={selectedOptions[quantityGroup.name] || ""}
+                    onChange={(e) => { setSelectedOptions((prev) => ({ ...prev, [quantityGroup.name]: e.target.value })); setPricingError(null); }}
+                    aria-label="Quantity"
+                    className={selectCls}
+                  >
+                    <option value="">— Select quantity —</option>
+                    {quantityGroup.values.map((v) => <option key={v.id} value={v.code}>{v.label}</option>)}
+                  </select>
+                </div>
               ) : (
                 <div>
                   <label htmlFor="qty" className={labelCls}>

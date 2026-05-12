@@ -10,13 +10,14 @@ import { useToast } from "@/hooks/use-toast";
 import {
   fetchAdminPricingRows,
   fetchAdminProductById,
-  fetchAdminProducts,
   updateAdminPricingRow,
   type AdminProduct,
   type AdminProductField,
+  type AdminService,
   type DiscountType,
   type PricingRow,
 } from "@/services/catalogAdminService";
+import { cachedJsonFetch } from "@/lib/requestCache";
 
 type RowEdit = {
   unit_price: string;
@@ -31,6 +32,8 @@ const selectCls =
 
 export default function PricingPage() {
   const { toast } = useToast();
+  const [services, setServices] = useState<AdminService[]>([]);
+  const [selectedServiceId, setSelectedServiceId] = useState("");
   const [products, setProducts] = useState<AdminProduct[]>([]);
   const [selectedProductId, setSelectedProductId] = useState("");
   const [pricingFields, setPricingFields] = useState<AdminProductField[]>([]);
@@ -68,12 +71,21 @@ export default function PricingPage() {
     setSaveStates({});
   };
 
+  const loadServices = useCallback(async () => {
+    try {
+      const data = await cachedJsonFetch<AdminService[]>("admin-pricing-services", "/api/admin/services", 60_000);
+      setServices(data);
+      if (data.length > 0) setSelectedServiceId(data[0].id);
+    } catch {
+      // Non-critical — service filter degrades gracefully
+    }
+  }, []);
+
   const loadProducts = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await fetchAdminProducts();
+      const data = await cachedJsonFetch<AdminProduct[]>("admin-pricing-products", "/api/admin/products", 60_000);
       setProducts(data);
-      setSelectedProductId((prev) => (!prev && data.length > 0 ? data[0].id : prev));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to load products.";
       toast({ title: "Load Failed", description: message, variant: "destructive" });
@@ -103,8 +115,25 @@ export default function PricingPage() {
     }
   }, [toast]);
 
+  useEffect(() => { loadServices(); }, [loadServices]);
   useEffect(() => { loadProducts(); }, [loadProducts]);
   useEffect(() => { if (selectedProductId) loadPricingData(selectedProductId); }, [selectedProductId, loadPricingData]);
+
+  const filteredProducts = selectedServiceId
+    ? products.filter((p) => p.service_id === selectedServiceId)
+    : products;
+
+  // Auto-select first product when service changes or products load
+  useEffect(() => {
+    if (filteredProducts.length > 0) {
+      setSelectedProductId((prev) => {
+        const stillValid = filteredProducts.some((p) => p.id === prev);
+        return stillValid ? prev : filteredProducts[0].id;
+      });
+    } else {
+      setSelectedProductId("");
+    }
+  }, [selectedServiceId, filteredProducts.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveRowById = async (rowId: string) => {
     const edit = rowEditsRef.current[rowId];
@@ -178,6 +207,26 @@ export default function PricingPage() {
             <CardTitle className="text-base font-semibold">Select Product</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {services.length > 0 && (
+              <div className="space-y-2">
+                <Label htmlFor="select-service">Service</Label>
+                <select
+                  id="select-service"
+                  aria-label="Select service"
+                  className={selectCls}
+                  value={selectedServiceId}
+                  onChange={(e) => {
+                    setSelectedServiceId(e.target.value);
+                    setSelectedProductId("");
+                  }}
+                >
+                  <option value="">All Services</option>
+                  {services.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="select-product">Product</Label>
               <select
@@ -187,7 +236,10 @@ export default function PricingPage() {
                 value={selectedProductId}
                 onChange={(e) => setSelectedProductId(e.target.value)}
               >
-                {products.map((p) => (
+                {filteredProducts.length === 0 && (
+                  <option value="" disabled>No products for this service</option>
+                )}
+                {filteredProducts.map((p) => (
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
               </select>

@@ -29,6 +29,7 @@ export function PricingSection({ productId, options }: Props) {
   const pricesRef = useRef<Record<string, string>>({});
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
+  const savedPricesRef = useRef<Record<string, string>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -38,6 +39,7 @@ export function PricingSection({ productId, options }: Props) {
       const init: Record<string, string> = {};
       data.forEach(r => { init[r.id] = r.price != null ? String(r.price) : ""; });
       pricesRef.current = init;
+      savedPricesRef.current = { ...init };
       setPrices(init);
     } catch (e) {
       toast({ title: "Could not load prices", description: (e as Error).message, variant: "destructive" });
@@ -55,8 +57,15 @@ export function PricingSection({ productId, options }: Props) {
       const n = parseFloat(pricesRef.current[rowId]);
       if (isNaN(n) || n < 0) return;
       setSavingId(rowId);
-      try { await updatePricingRow(rowId, n); }
-      catch { toast({ title: "Could not save price", variant: "destructive" }); }
+      try {
+        await updatePricingRow(rowId, n);
+        savedPricesRef.current[rowId] = pricesRef.current[rowId];
+      } catch {
+        toast({ title: "Could not save price", variant: "destructive" });
+        const revert = savedPricesRef.current[rowId] ?? "";
+        pricesRef.current[rowId] = revert;
+        setPrices(p => ({ ...p, [rowId]: revert }));
+      }
       finally { setSavingId(null); }
     }, 700);
   }
@@ -78,6 +87,8 @@ export function PricingSection({ productId, options }: Props) {
       return;
     }
     setGenerating(true);
+    let created = 0;
+    let skipped = 0;
     try {
       const existingKeys = new Set(rows.map(r =>
         r.selectedOptions.slice().sort((a, b) => a.fieldKey.localeCompare(b.fieldKey))
@@ -85,19 +96,24 @@ export function PricingSection({ productId, options }: Props) {
       ));
 
       const choiceArrays = pricingOpts.map(o => o.choices.map(c => ({ fieldId: o.id, fk: o.field_key, value: c.value })));
-      let created = 0;
       for (const combo of cartesian(choiceArrays)) {
         const key = combo.slice().sort((a, b) => a.fk.localeCompare(b.fk)).map(x => `${x.fk}:${x.value}`).join("|");
         if (!existingKeys.has(key)) {
-          await createPricingRow(productId, combo.map(x => ({ fieldId: x.fieldId, value: x.value })), 0);
-          created++;
+          try {
+            await createPricingRow(productId, combo.map(x => ({ fieldId: x.fieldId, value: x.value })), 0);
+            created++;
+          } catch {
+            skipped++;
+          }
         }
       }
-      await load();
       toast({ title: created > 0 ? `${created} price row${created > 1 ? "s" : ""} created` : "All combinations already exist" });
     } catch (e) {
       toast({ title: "Error", description: (e as Error).message, variant: "destructive" });
-    } finally { setGenerating(false); }
+    } finally {
+      await load();
+      setGenerating(false);
+    }
   }
 
   const hasOptions = options.some(o => o.choices.length > 0);

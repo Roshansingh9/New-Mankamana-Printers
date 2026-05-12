@@ -28,6 +28,7 @@ export function ProductList({ products, services, selectedId, onSelect, onCreate
 
   async function handleCreate() {
     if (!name.trim()) return toast({ title: "Enter a product name", variant: "destructive" });
+    if (!serviceId) return toast({ title: "Select a service category first", variant: "destructive" });
     setSaving(true);
     try {
       const p = await createProduct(serviceId, { product_code: autoCode(name), name: name.trim(), description: desc.trim() || undefined });

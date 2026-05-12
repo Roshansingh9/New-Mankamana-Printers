@@ -34,7 +34,7 @@ export function generateInvoicePdf(data: InvoiceData): Promise<Buffer> {
     // ── Header ────────────────────────────────────────────────
     doc.rect(0, 0, doc.page.width, 80).fill("#0f172a");
     doc.fillColor("#ffffff").fontSize(18).font("Helvetica-Bold").text("New Mankamana Printers", 50, 25);
-    doc.fillColor("#94a3b8").fontSize(10).font("Helvetica").text("Tax Invoice", 50, 50);
+    doc.fillColor("#94a3b8").fontSize(10).font("Helvetica").text("Invoice", 50, 50);
     doc.fillColor("#fbbf24").fontSize(14).font("Helvetica-Bold").text(invoiceNumber, doc.page.width - 180, 25, { width: 130, align: "right" });
     doc.fillColor("#94a3b8").fontSize(9).font("Helvetica").text(`Accepted: ${acceptedStr}`, doc.page.width - 180, 48, { width: 130, align: "right" });
 
@@ -114,6 +114,26 @@ export function generateInvoicePdf(data: InvoiceData): Promise<Buffer> {
       doc.fillColor("#78350f").fontSize(9).font("Helvetica").text(data.notes, 58, y + 17, { width: doc.page.width - 120 });
       y += 50;
     }
+
+    // ── Terms & Conditions ────────────────────────────────────
+    y += 8;
+    doc.rect(50, y, doc.page.width - 100, 16).fill("#f8fafc");
+    doc.strokeColor("#e2e8f0").lineWidth(0.5).rect(50, y, doc.page.width - 100, 16).stroke();
+    doc.fillColor("#94a3b8").fontSize(7).font("Helvetica-Bold").text("TERMS & CONDITIONS", 58, y + 4.5);
+    y += 16;
+    const tcLines = [
+      "1. B2B only — orders accepted from registered printing presses and trade partners. Full legal responsibility for content rests with the submitting party.",
+      "2. Exact colour matching between separate print runs is not guaranteed without a saved Job Profile.",
+      "3. Liability ceases upon dispatch. Risk of loss or damage transfers to the Client or nominated delivery agent once the order leaves our premises.",
+      "4. Maximum liability shall not exceed the invoice value of the disputed order. No liability for indirect losses or consequential damages.",
+      "5. All disputes are subject to the exclusive jurisdiction of the competent courts of Rupandehi District, Nepal.",
+    ];
+    doc.fillColor("#94a3b8").fontSize(7).font("Helvetica");
+    for (const line of tcLines) {
+      doc.text(line, 58, y, { width: doc.page.width - 116 });
+      y += doc.currentLineHeight() + 2;
+    }
+    y += 6;
 
     // ── Footer ────────────────────────────────────────────────
     doc.fillColor("#94a3b8").fontSize(9).font("Helvetica").text("New Mankamana Printers — Professional Printing Services", 50, y + 10, { align: "center", width: doc.page.width - 100 });

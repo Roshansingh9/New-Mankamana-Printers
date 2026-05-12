@@ -243,6 +243,65 @@ export const getOrderPaymentProof = async (req: Request, res: Response) => {
   }
 };
 
+// getMyOrderPaymentProof: Client proxy — streams the payment proof for an order the client owns
+export const getMyOrderPaymentProof = async (req: Request, res: Response) => {
+  try {
+    const orderId = req.params.orderId as string;
+    const currentUser = (req as any).user;
+    const order = await orderService.getOrderDetailsService(orderId);
+    if (!order || order.user_id !== currentUser.id) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+    if (!order.payment_proof_url) return res.status(404).end();
+
+    const proofPath = order.payment_proof_url;
+    if (proofPath.startsWith("http")) return res.redirect(302, proofPath);
+
+    const { buffer, mimeType } = await downloadFromSupabase(proofPath);
+    res.setHeader("Content-Type", mimeType);
+    res.setHeader("Content-Disposition", `inline; filename="${order.payment_proof_file_name || "proof"}"`);
+    res.setHeader("Cache-Control", "private, max-age=60");
+    return res.send(buffer);
+  } catch (error) {
+    console.error("Error proxying client order payment proof:", error);
+    return res.status(500).end();
+  }
+};
+
+// getMyOrderAttachment: Client proxy — streams a single attachment by index for an order the client owns
+export const getMyOrderAttachment = async (req: Request, res: Response) => {
+  try {
+    const orderId = req.params.orderId as string;
+    const fileIndex = parseInt(req.params.fileIndex as string, 10);
+    const currentUser = (req as any).user;
+
+    if (isNaN(fileIndex) || fileIndex < 0) {
+      return res.status(400).json({ success: false, message: "Invalid file index" });
+    }
+
+    const order = await orderService.getOrderDetailsService(orderId);
+    if (!order || order.user_id !== currentUser.id) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+
+    const urls = (order.attachment_urls as string[] | null) ?? [];
+    if (fileIndex >= urls.length) {
+      return res.status(404).json({ success: false, message: "Attachment not found" });
+    }
+
+    const filePath = urls[fileIndex];
+    const fileName = filePath.split("/").pop() || `attachment-${fileIndex}`;
+    const { buffer, mimeType } = await downloadFromSupabase(filePath);
+    res.setHeader("Content-Type", mimeType);
+    res.setHeader("Content-Disposition", `inline; filename="${fileName}"`);
+    res.setHeader("Cache-Control", "private, max-age=300");
+    return res.send(buffer);
+  } catch (error) {
+    console.error("Error proxying client order attachment:", error);
+    return res.status(500).end();
+  }
+};
+
 // downloadOrderInvoice: Admin-only — generates and streams a PDF invoice for any order
 export const downloadOrderInvoice = async (req: Request, res: Response) => {
   try {

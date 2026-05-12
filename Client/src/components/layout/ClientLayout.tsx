@@ -6,6 +6,7 @@ import { useAuthStore } from "@/store/authStore";
 import { notify } from "@/utils/notifications";
 import Navbar from "./Navbar";
 import Footer from "./Footer";
+import QueryProvider from "@/components/providers/QueryProvider";
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
     const { isAuthenticated, isInitialized, logout } = useAuthStore();
@@ -40,13 +41,13 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
 
     if (!isInitialized || !isAuthenticated) return null;
 
-    const whatsappNumber = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "9779804458995";
+    const whatsappNumber = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "9779806955313";
 
     return (
         <div className="min-h-screen bg-[#f8fafc] flex flex-col">
             <Navbar />
             <main className="flex-1">
-                {children}
+                <QueryProvider>{children}</QueryProvider>
             </main>
             <Footer />
             {/* Floating WhatsApp button */}

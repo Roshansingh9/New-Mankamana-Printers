@@ -55,7 +55,9 @@ export default function ContactPage() {
                 <p className="text-sm text-slate-700 leading-relaxed">
                   Head Office
                   <br />
-                  Butwal-6, Traffic Chowk, (Jagriti Path)
+                  Traffic Chowk, (Jagriti Path)
+                  <br />
+                  Butwal, Rupandehi, Nepal
                 </p>
               </div>
               <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
@@ -66,10 +68,7 @@ export default function ContactPage() {
                   <div>
                     <span className="text-[color:var(--primary)] mr-2">📞</span>
                     <span>
-                      <a
-                        href="tel:+9779804458995"
-                        className="text-blue-600 font-semibold"
-                      >
+                      <a href="tel:+9779804458995" className="text-blue-600 font-semibold">
                         +977 9804458995
                       </a>{" "}
                       <span className="text-slate-400">(Office)</span>
@@ -78,33 +77,37 @@ export default function ContactPage() {
                   <div>
                     <span className="text-[color:var(--primary)] mr-2">📞</span>
                     <span>
-                      <a
-                        href="tel:+9779847526152"
-                        className="text-blue-600 font-semibold"
-                      >
-                        +977 9847526152
+                      <a href="tel:+9779705396330" className="text-blue-600 font-semibold">
+                        +977 9705396330
                       </a>{" "}
-                      <span className="text-slate-400">(Sagar Kapoor)</span>
+                      <span className="text-slate-400">(Office)</span>
                     </span>
                   </div>
                   <div>
                     <span className="text-[color:var(--primary)] mr-2">📞</span>
                     <span>
+                      <a href="tel:+9779847526152" className="text-blue-600 font-semibold">
+                        +977 9847526152
+                      </a>
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-green-500 mr-2">💬</span>
+                    <span>
                       <a
-                        href="tel:+9779806955313"
-                        className="text-blue-600 font-semibold"
+                        href="https://wa.me/9779806955313"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-green-600 font-semibold"
                       >
                         +977 9806955313
                       </a>{" "}
-                      <span className="text-slate-400">(Sagar Kapoor)</span>
+                      <span className="text-slate-400">(WhatsApp)</span>
                     </span>
                   </div>
                   <div className="flex items-center mt-2">
                     <span className="text-[color:var(--primary)] mr-2">✉️</span>
-                    <a
-                      href="mailto:nmpress2082@gmail.com"
-                      className="text-blue-600 font-semibold"
-                    >
+                    <a href="mailto:nmpress2082@gmail.com" className="text-blue-600 font-semibold">
                       nmpress2082@gmail.com
                     </a>
                   </div>

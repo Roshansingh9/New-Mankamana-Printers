@@ -34,6 +34,8 @@ export const fetchJsonCached = async <T>(
     if (l2 !== null) {
       // Populate L1 from L2
       l1Cache.set(key, { value: l2, expiresAt: now + ttlMs });
+      // SWR: silently refresh IDB in the background so it never drifts stale
+      revalidateInBackground(key, url, init, ttlMs, l2, () => {});
       return l2;
     }
 
@@ -125,4 +127,32 @@ export const revalidateInBackground = <T>(
       }
     })
     .catch(() => {});
+};
+
+// Tracks active background refresh intervals
+const backgroundIntervals = new Map<string, ReturnType<typeof setInterval>>();
+
+/**
+ * startBackgroundRefresh
+ * Registers an interval-based background refresh for catalog data.
+ * Fires `revalidateInBackground` every `ttlMs` milliseconds regardless of tab focus.
+ * Returns a cleanup function — call it in the useEffect return to clear on unmount.
+ */
+export const startBackgroundRefresh = <T>(
+  key: string,
+  url: string,
+  init: RequestInit | undefined,
+  ttlMs: number,
+  getCurrent: () => T,
+  onUpdate: (fresh: T) => void
+): (() => void) => {
+  if (backgroundIntervals.has(key)) clearInterval(backgroundIntervals.get(key)!);
+  const id = setInterval(() => {
+    revalidateInBackground(key, url, init, ttlMs, getCurrent(), onUpdate);
+  }, ttlMs);
+  backgroundIntervals.set(key, id);
+  return () => {
+    clearInterval(id);
+    backgroundIntervals.delete(key);
+  };
 };

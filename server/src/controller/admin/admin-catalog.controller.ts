@@ -278,7 +278,7 @@ export const removeProductDiscount = async (req: Request, res: Response) => {
 export const createProductField = async (req: Request, res: Response) => {
   try {
     const productId = req.params.productId as string;
-    const { field_key, label, is_required, display_order } = req.body;
+    const { field_key, label, is_required, display_order, is_pricing_field } = req.body;
     if (!field_key || !label) {
       return res.status(400).json({ success: false, message: "field_key and label are required" });
     }
@@ -295,6 +295,7 @@ export const createProductField = async (req: Request, res: Response) => {
         label,
         is_required: is_required ?? true,
         display_order: display_order ?? 0,
+        is_pricing_dimension: is_pricing_field ?? false,
       },
     });
     await invalidateCatalogCachesForVariant(variant.id, productId);
@@ -481,7 +482,7 @@ export const createProductPricing = async (req: Request, res: Response) => {
     const productId = req.params.productId as string;
     const { selectedOptions, unit_price, discount_type, discount_value } = req.body;
 
-    if (!unit_price) {
+    if (unit_price === undefined || unit_price === null) {
       return res.status(400).json({ success: false, message: "unit_price is required" });
     }
 
@@ -606,6 +607,14 @@ export const paDeleteField = async (req: Request, res: Response) => {
   try {
     const fieldId = String(req.params.fieldId);
     const g = await prisma.optionGroup.findUnique({ where: { id: fieldId }, select: { variant_id: true } });
+    if (g?.variant_id) {
+      // Delete pricing rows whose selected_options reference this field
+      const pricingRows = await prisma.variantPricing.findMany({ where: { variant_id: g.variant_id } });
+      const toDelete = pricingRows
+        .filter(r => ((r.selected_options as any[]) ?? []).some((o: any) => o.field_id === fieldId))
+        .map(r => r.id);
+      if (toDelete.length) await prisma.variantPricing.deleteMany({ where: { id: { in: toDelete } } });
+    }
     await prisma.optionGroup.delete({ where: { id: fieldId } });
     if (g?.variant_id) await invalidateCatalogCachesForVariant(g.variant_id);
     res.json({ success: true });
@@ -615,6 +624,17 @@ export const paDeleteOption = async (req: Request, res: Response) => {
   try {
     const optionId = String(req.params.optionId);
     const v = await prisma.optionValue.findUnique({ where: { id: optionId }, select: { group_id: true, group: { select: { variant_id: true } } } });
+    if (v?.group?.variant_id) {
+      // Need the option's code to match against selected_options JSON
+      const ov = await prisma.optionValue.findUnique({ where: { id: optionId } });
+      if (ov) {
+        const pricingRows = await prisma.variantPricing.findMany({ where: { variant_id: v.group.variant_id } });
+        const toDelete = pricingRows
+          .filter(r => ((r.selected_options as any[]) ?? []).some((o: any) => o.field_id === v.group_id && o.value === ov.code))
+          .map(r => r.id);
+        if (toDelete.length) await prisma.variantPricing.deleteMany({ where: { id: { in: toDelete } } });
+      }
+    }
     await prisma.optionValue.delete({ where: { id: optionId } });
     if (v?.group?.variant_id) await invalidateCatalogCachesForVariant(v.group.variant_id);
     res.json({ success: true });

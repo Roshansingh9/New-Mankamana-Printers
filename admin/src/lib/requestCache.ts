@@ -37,6 +37,8 @@ export const cachedJsonFetch = async <T>(
     // L2 hit
     if (l2 !== null) {
       l1Cache.set(key, { value: l2, expiresAt: Date.now() + ttlMs });
+      // SWR: silently refresh IDB in the background so it never drifts stale
+      revalidateInBackground(key, url, ttlMs, () => {}, init);
       return l2;
     }
     // L3: network

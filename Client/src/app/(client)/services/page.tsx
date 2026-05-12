@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getAuthHeaders } from "@/store/authStore";
-import { fetchJsonCached, registerFocusRevalidation } from "@/utils/requestCache";
+import { fetchJsonCached, registerFocusRevalidation, startBackgroundRefresh } from "@/utils/requestCache";
 import { normalizeImageUrl } from "@/utils/image";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
@@ -157,28 +157,33 @@ export default function ServicesPage() {
         const CATALOG_KEY = "catalog-browse";
         const CATALOG_URL = `${API_BASE}/catalog`;
         const init = { headers: getAuthHeaders() };
+        let lastResponse: CatalogResponse | null = null;
 
         const applyData = (d: CatalogResponse) => {
             if (!d.success || !d.data) return;
+            lastResponse = d;
             setItems([...d.data.groups, ...d.data.products]);
             // Prefetch standalone product details into L1+L2 cache
             d.data.products.forEach((p) => {
-                fetchJsonCached<unknown>(`catalog-product-${p.id}`, `${API_BASE}/products/${p.id}`, init, 120_000).catch(() => {});
-                fetchJsonCached<unknown>(`catalog-variants-${p.id}`, `${API_BASE}/products/${p.id}/variants`, init, 120_000).catch(() => {});
+                fetchJsonCached<unknown>(`catalog-product-${p.id}`, `${API_BASE}/products/${p.id}`, init, 60_000).catch(() => {});
+                fetchJsonCached<unknown>(`catalog-variants-${p.id}`, `${API_BASE}/products/${p.id}/variants`, init, 60_000).catch(() => {});
             });
         };
 
-        fetchJsonCached<CatalogResponse>(CATALOG_KEY, CATALOG_URL, init, 120_000)
+        fetchJsonCached<CatalogResponse>(CATALOG_KEY, CATALOG_URL, init, 60_000)
             .then(applyData)
             .catch(() => {})
             .finally(() => setLoading(false));
 
-        // Re-fetch when the tab regains focus or becomes visible - ensures catalog
-        // stays fresh after admin changes without requiring a full page reload.
         const deregister = registerFocusRevalidation<CatalogResponse>(
-            CATALOG_KEY, CATALOG_URL, init, 120_000, applyData
+            CATALOG_KEY, CATALOG_URL, init, 60_000, applyData
         );
-        return deregister;
+        const stopBg = startBackgroundRefresh<CatalogResponse>(
+            CATALOG_KEY, CATALOG_URL, init, 60_000,
+            () => lastResponse as CatalogResponse,
+            applyData
+        );
+        return () => { deregister(); stopBg(); };
     }, []);
 
     return (

@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { getAuthHeaders } from "@/store/authStore";
-import { fetchJsonCached } from "@/utils/requestCache";
 import { formatDate, formatCurrency } from "@/utils/helpers";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8005/api/v1";
@@ -84,96 +85,56 @@ function FilterPills({ options, value, onChange }: {
     );
 }
 
-export default function WalletPage() {
-    const [tab, setTab] = useState<"transactions" | "topups">("transactions");
-
-    const [balance, setBalance] = useState<WalletBalance | null>(null);
-    const [balanceLoading, setBalanceLoading] = useState(true);
-
-    const [transactions, setTransactions] = useState<Transaction[]>([]);
-    const [txnLoading, setTxnLoading] = useState(true);
+function WalletPageInner() {
+    const searchParams = useSearchParams();
+    const initialTab = searchParams.get("tab") === "topups" ? "topups" : "transactions";
+    const [tab, setTab] = useState<"transactions" | "topups">(initialTab);
     const [txnFilter, setTxnFilter] = useState("ALL");
-
-    const [topups, setTopups] = useState<TopupRequest[]>([]);
-    const [topupLoading, setTopupLoading] = useState(true);
     const [topupFilter, setTopupFilter] = useState("ALL");
 
-    const fetchBalance = useCallback(async () => {
-        try {
-            const data = await fetchJsonCached<ApiResponse<WalletBalance>>(
-                "wallet-balance",
-                `${API_BASE}/wallet/balance`,
-                { headers: getAuthHeaders() },
-                10_000
-            );
-            if (data.success) setBalance(data.data);
-        } finally {
-            setBalanceLoading(false);
-        }
-    }, []);
+    const { data: balanceData, isLoading: balanceLoading } = useQuery({
+        queryKey: ["wallet-balance"],
+        queryFn: () =>
+            fetch(`${API_BASE}/wallet/balance`, { headers: getAuthHeaders() })
+                .then((r) => r.json() as Promise<ApiResponse<WalletBalance>>),
+        staleTime: 60_000,
+        refetchInterval: 60_000,
+    });
+    const balance = balanceData?.success ? balanceData.data : null;
 
-    const fetchTransactions = useCallback(async () => {
-        setTxnLoading(true);
-        try {
+    const { data: txnData, isLoading: txnLoading } = useQuery({
+        queryKey: ["wallet-transactions", txnFilter],
+        queryFn: () => {
             const params = new URLSearchParams({ page: "1", limit: "50" });
             if (txnFilter !== "ALL") params.set("type", txnFilter);
-            const cacheKey = `wallet-txns-${txnFilter}`;
-            const data = await fetchJsonCached<ApiResponse<{ items?: Transaction[]; transactions?: Transaction[] } | Transaction[]>>(
-                cacheKey,
-                `${API_BASE}/wallet/transactions?${params}`,
-                { headers: getAuthHeaders() },
-                10_000
-            );
-            if (data.success) {
-                const d = data.data;
-                setTransactions(Array.isArray(d) ? d : (d.items ?? d.transactions ?? []));
-            }
-        } finally {
-            setTxnLoading(false);
-        }
-    }, [txnFilter]);
+            return fetch(`${API_BASE}/wallet/transactions?${params}`, { headers: getAuthHeaders() })
+                .then((r) => r.json() as Promise<ApiResponse<{ items?: Transaction[]; transactions?: Transaction[] } | Transaction[]>>);
+        },
+        staleTime: 60_000,
+        refetchInterval: 60_000,
+    });
+    const filteredTxns: Transaction[] = (() => {
+        if (!txnData?.success) return [];
+        const d = txnData.data;
+        return Array.isArray(d) ? d : (d.items ?? d.transactions ?? []);
+    })();
 
-    const fetchTopups = useCallback(async () => {
-        setTopupLoading(true);
-        try {
+    const { data: topupData, isLoading: topupLoading } = useQuery({
+        queryKey: ["wallet-topups", topupFilter],
+        queryFn: () => {
             const params = new URLSearchParams({ page: "1", limit: "50" });
             if (topupFilter !== "ALL") params.set("status", topupFilter);
-            const cacheKey = `wallet-topups-${topupFilter}`;
-            const data = await fetchJsonCached<ApiResponse<{ items?: TopupRequest[]; requests?: TopupRequest[] } | TopupRequest[]>>(
-                cacheKey,
-                `${API_BASE}/wallet/topup-requests?${params}`,
-                { headers: getAuthHeaders() },
-                20_000
-            );
-            if (data.success) {
-                const d = data.data;
-                setTopups(Array.isArray(d) ? d : (d.items ?? d.requests ?? []));
-            }
-        } finally {
-            setTopupLoading(false);
-        }
-    }, [topupFilter]);
-
-    useEffect(() => {
-        fetchBalance();
-        const id = setInterval(fetchBalance, 10_000);
-        return () => clearInterval(id);
-    }, [fetchBalance]);
-
-    useEffect(() => {
-        fetchTransactions();
-        const id = setInterval(fetchTransactions, 10_000);
-        return () => clearInterval(id);
-    }, [fetchTransactions]);
-
-    useEffect(() => {
-        fetchTopups();
-        const id = setInterval(fetchTopups, 10_000);
-        return () => clearInterval(id);
-    }, [fetchTopups]);
-
-    const filteredTxns = transactions;
-    const filteredTopups = topups;
+            return fetch(`${API_BASE}/wallet/topup-requests?${params}`, { headers: getAuthHeaders() })
+                .then((r) => r.json() as Promise<ApiResponse<{ items?: TopupRequest[]; requests?: TopupRequest[] } | TopupRequest[]>>);
+        },
+        staleTime: 60_000,
+        refetchInterval: 60_000,
+    });
+    const filteredTopups: TopupRequest[] = (() => {
+        if (!topupData?.success) return [];
+        const d = topupData.data;
+        return Array.isArray(d) ? d : (d.items ?? d.requests ?? []);
+    })();
 
     return (
         <div className="min-h-[calc(100vh-68px)] bg-[#f8f7f4]">
@@ -431,5 +392,13 @@ export default function WalletPage() {
                 )}
             </div>
         </div>
+    );
+}
+
+export default function WalletPage() {
+    return (
+        <Suspense>
+            <WalletPageInner />
+        </Suspense>
     );
 }

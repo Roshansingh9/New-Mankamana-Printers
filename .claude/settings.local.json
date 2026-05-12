@@ -13,7 +13,16 @@
       "Bash(grep -r input.*type.*file 'U:/Leafclutch/printing press/code/Manakamana-Printing-E-commerce-platform/Client/src' --include=*.tsx --include=*.ts)",
       "Bash(grep -r \"FormData\\\\|new File\\\\|upload\" 'U:/Leafclutch/printing press/code/Manakamana-Printing-E-commerce-platform/Client/src' --include=*.tsx --include=*.ts)",
       "Bash(find:*)",
-      "Bash(node -e \"require\\(''pdfkit''\\); console.log\\(''pdfkit ok''\\)\")"
+      "Bash(node -e \"require\\(''pdfkit''\\); console.log\\(''pdfkit ok''\\)\")",
+      "Bash(Remove-Item *)",
+      "PowerShell(Get-ChildItem -Path \"U:\\\\Leafclutch\\\\printing press\\\\code\\\\Manakamana-Printing-E-commerce-platform\\\\Free Designs\" -Recurse -File | ForEach-Object { $_.FullName.Replace\\(\"U:\\\\Leafclutch\\\\printing press\\\\code\\\\Manakamana-Printing-E-commerce-platform\\\\Free Designs\\\\\", \"\"\\) } | Sort-Object)",
+      "Bash(grep -E \"\\(fetchJsonCached|[0-9]{3,}_?[0-9]*\\\\\\)\\)\")",
+      "Bash(Get-ChildItem *)",
+      "Bash(npx tsc *)",
+      "Bash(Select-Object -ExpandProperty Name)",
+      "Bash(grep -v \"export\\\\|//.*updateProfileSchema\")",
+      "Bash(powershell -Command \"Get-ChildItem -Path 'admin\\\\src\\\\app\\\\api\\\\admin' -Include '*route.ts' -Recurse | Select-Object -ExpandProperty Name | Sort-Object\")",
+      "Bash(powershell -Command ' *)"
     ]
   }
 }
