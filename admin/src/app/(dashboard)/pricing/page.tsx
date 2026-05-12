@@ -71,9 +71,13 @@ export default function PricingPage() {
     setSaveStates({});
   };
 
+  const unwrap = <T,>(resp: { data?: T } | T): T =>
+    (Array.isArray(resp) ? resp : (resp as { data?: T }).data) as T;
+
   const loadServices = useCallback(async () => {
     try {
-      const data = await cachedJsonFetch<AdminService[]>("admin-pricing-services", "/api/admin/services", 60_000);
+      const resp = await cachedJsonFetch<{ data?: AdminService[] } | AdminService[]>("admin-pricing-services", "/api/admin/services", 60_000);
+      const data = unwrap<AdminService[]>(resp) ?? [];
       setServices(data);
       if (data.length > 0) setSelectedServiceId(data[0].id);
     } catch {
@@ -84,8 +88,8 @@ export default function PricingPage() {
   const loadProducts = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await cachedJsonFetch<AdminProduct[]>("admin-pricing-products", "/api/admin/products", 60_000);
-      setProducts(data);
+      const resp = await cachedJsonFetch<{ data?: AdminProduct[] } | AdminProduct[]>("admin-pricing-products", "/api/admin/products", 60_000);
+      setProducts(unwrap<AdminProduct[]>(resp) ?? []);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to load products.";
       toast({ title: "Load Failed", description: message, variant: "destructive" });

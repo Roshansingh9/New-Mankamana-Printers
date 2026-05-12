@@ -24,5 +24,8 @@
       "Bash(powershell -Command \"Get-ChildItem -Path 'admin\\\\src\\\\app\\\\api\\\\admin' -Include '*route.ts' -Recurse | Select-Object -ExpandProperty Name | Sort-Object\")",
       "Bash(powershell -Command ' *)"
     ]
-  }
+  },
+  "disabledMcpjsonServers": [
+    "code-review-graph"
+  ]
 }
